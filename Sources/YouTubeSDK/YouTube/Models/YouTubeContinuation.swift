@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct YouTubeContinuation<T>: Sendable {
+public struct YouTubeContinuation<T: Sendable>: Sendable {
     public let items: [T]
     public let continuationToken: String?
     

@@ -9,6 +9,7 @@ import Foundation
 
 /// The central entry point for the YouTubeSDK.
 /// Use this manager to access Main YouTube, Music, Charts, and Auth functionalities.
+@MainActor
 public final class YouTube {
     
     /// Shared singleton instance for ease of use.

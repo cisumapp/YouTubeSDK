@@ -41,6 +41,12 @@ public struct YouTubeSDKConstants {
         public struct Renderers {
             public static let video = "videoRenderer"
             public static let gridVideo = "gridVideoRenderer"
+            public static let compactVideo = "compactVideoRenderer"
+            public static let videoWithContext = "videoWithContextRenderer"
+            public static let reelItem = "reelItemRenderer"
+            public static let richItem = "richItemRenderer"
+            public static let itemSection = "itemSectionRenderer"
+            public static let shelf = "shelfRenderer"
             public static let musicVideo = "musicVideoRenderer"
             public static let musicResponsiveListItem = "musicResponsiveListItemRenderer"
             public static let playlistVideo = "playlistVideoRenderer"

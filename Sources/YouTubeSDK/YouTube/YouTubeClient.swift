@@ -9,12 +9,15 @@ import Foundation
 
 public actor YouTubeClient {
     let network: NetworkClient
+    let webSearchNetwork: NetworkClient
     
     /// Initializes the Client.
     /// - Parameter cookies: Optional "Cookie" header string. If provided, requests will be authenticated.
     public init(cookies: String? = nil) {
         let context = InnerTubeContext(client: ClientConfig.ios, cookies: cookies)
+        let webContext = InnerTubeContext(client: ClientConfig.web, cookies: cookies)
         self.network = NetworkClient(context: context)
+        self.webSearchNetwork = NetworkClient(context: webContext)
     }
 
     // MARK: - Browsing
@@ -53,8 +56,26 @@ public actor YouTubeClient {
     }
 
     public func search(_ query: String) async throws -> YouTubeContinuation<YouTubeItem> {
-        let data = try await network.get("search", body: ["query": query])
-        return await parseContinuationResults(from: data)
+        let data = try await webSearchNetwork.get("search", body: ["query": query])
+        let diagnostics = diagnoseSearchResponse(from: data)
+        print("yt_search_diagnostics client=WEB \(diagnostics.summary)")
+        writeSearchDebugDump(data, clientName: "web")
+
+        return parseContinuationResults(from: data)
+    }
+
+    public func writeSearchDebugDump(_ data: Data, clientName: String) {
+        let timestamp = Int(Date().timeIntervalSince1970)
+        let tempFile = "yt_search_debug_\(clientName)_\(timestamp).json"
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(tempFile)
+
+        guard let jsonObject = try? JSONSerialization.jsonObject(with: data),
+              let debugData = try? JSONSerialization.data(withJSONObject: jsonObject, options: .prettyPrinted) else {
+            return
+        }
+
+        try? debugData.write(to: tempURL, options: .atomic)
+        print("yt_search_debug client=\(clientName) saved=\(tempURL.path)")
     }
 
     /// Fetches the full video details, including Streaming URLs (HLS).
@@ -97,7 +118,7 @@ public actor YouTubeClient {
             URLQueryItem(name: "q", value: query)
         ]
         
-        guard let url = components.url else { return [] }
+        guard let url = components?.url else { return [] }
         
         let (data, _) = try await URLSession.shared.data(from: url)
         guard let responseString = String(data: data, encoding: .utf8) else { return [] }
@@ -120,7 +141,7 @@ public actor YouTubeClient {
     
     /// Fetches an AI-powered summary of the video (if available).
     public func getVideoSummary(videoId: String) async throws -> YouTubeAISummary {
-        let body: [String: Any] = [
+        let body: [String: String] = [
             "videoId": videoId,
             "engagementPanelType": "ENGAGEMENT_PANEL_TYPE_YOU_CHAT"
         ]
@@ -128,7 +149,7 @@ public actor YouTubeClient {
         
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let summary = YouTubeAISummary(from: json) else {
-            throw YouTubeError.apiError("AI Summary not available for this video.")
+            throw YouTubeError.apiError(message: "AI Summary not available for this video.")
         }
         return summary
     }

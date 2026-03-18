@@ -126,21 +126,28 @@ public extension YouTubeVideo {
         if let viewData = data["viewCountText"] as? [String: Any],
            let simple = viewData["simpleText"] as? String {
             self.viewCount = simple
+        } else if let shortViewData = data["shortViewCountText"] as? [String: Any],
+                  let simple = shortViewData["simpleText"] as? String {
+            self.viewCount = simple
         } else {
             self.viewCount = "0"
         }
         
-        // Author/Channel
-        if let owner = data["ownerText"] as? [String: Any],
-           let runs = owner["runs"] as? [[String: Any]],
+        // Author/Channel (ownerText for standard videoRenderer, byline for compact/videoWithContext)
+        let bylineRuns =
+            (data["ownerText"] as? [String: Any])?["runs"] as? [[String: Any]] ??
+            (data["longBylineText"] as? [String: Any])?["runs"] as? [[String: Any]] ??
+            (data["shortBylineText"] as? [String: Any])?["runs"] as? [[String: Any]]
+        
+        if let runs = bylineRuns,
            let name = runs.first?["text"] as? String {
-            self.author = name
-            let nav = runs.first?["navigationEndpoint"] as? [String: Any]
-            self.channelId = (nav?["browseEndpoint"] as? [String: Any])?["browseId"] as? String ?? ""
-        } else {
-            self.author = "Unknown"
-            self.channelId = ""
-        }
+             self.author = name
+             let nav = runs.first?["navigationEndpoint"] as? [String: Any]
+             self.channelId = (nav?["browseEndpoint"] as? [String: Any])?["browseId"] as? String ?? ""
+         } else {
+             self.author = "Unknown"
+             self.channelId = ""
+         }
         
         // Thumbnail
         if let thumbDetails = data["thumbnail"] as? [String: Any],

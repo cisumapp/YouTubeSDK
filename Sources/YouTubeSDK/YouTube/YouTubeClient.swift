@@ -23,8 +23,9 @@ public actor YouTubeClient {
     // MARK: - Browsing
     
     public func getHome() async throws -> YouTubeContinuation<YouTubeItem> {
-        let data = try await network.get("browse", body: ["browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.home])
-        return await parseContinuationResults(from: data)
+        // Home parsing is tuned to WEB browse payloads (rich wrappers and continuation shape).
+        let data = try await webSearchNetwork.get("browse", body: ["browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.home])
+        return parseContinuationResults(from: data)
     }
     
     public func getTrending() async throws -> [YouTubeVideo] {

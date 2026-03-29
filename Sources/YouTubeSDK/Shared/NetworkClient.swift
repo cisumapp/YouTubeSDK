@@ -39,89 +39,105 @@ public actor NetworkClient {
     /// Sends a request and returns the Raw Data (no decoding).
     /// Useful for complex endpoints where we need to inspect the JSON before decoding.
     public func get(_ endpoint: String, body: [String: String] = [:]) async throws -> Data {
-        // 1. Build URL (Robust way)
-        guard let url = URL(string: baseURL) else { throw URLError(.badURL) }
-        
-        // This handles the "/" logic automatically so "v1/search" and "/v1/search" both work
-        var components = URLComponents(url: url.appendingPathComponent("v1").appendingPathComponent(endpoint), resolvingAgainstBaseURL: true)
-        components?.queryItems = [URLQueryItem(name: "key", value: context.apiKey)]
-        
-        guard let url = components?.url else { throw URLError(.badURL) }
-        
-        // 2. Setup Request
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        
-        // 3. Add Headers
-        for (key, value) in context.headers {
-            request.setValue(value, forHTTPHeaderField: key)
+        let typedBody = body.reduce(into: [String: Any]()) { partialResult, item in
+            partialResult[item.key] = item.value
         }
-        
-        // 4. Build Payload
-        var payload = context.body
-        for (key, value) in body {
-            payload[key] = value
-        }
-        
-        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        
-        // 5. Send
-        let (data, response) = try await session.data(for: request)
-        
-        // 6. Validate
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw URLError(.badServerResponse)
-        }
-        
-        if httpResponse.statusCode != 200 {
-            if let errorString = String(data: data, encoding: .utf8) {
-                print("❌ YouTube Error (\(httpResponse.statusCode)): \(errorString)")
-            }
-            throw URLError(.badServerResponse)
-        }
-        
-        return data
+        return try await sendRawRequest(endpoint, body: typedBody)
     }
     
     // Overload for complex bodies (needed for Charts & Analytics)
     /// Sends a request with a complex nested body (required for Like, Subscribe, etc.)
-    public func sendComplexRequest(_ endpoint: String, body: [String: Any]) async throws -> Data {
-        guard let baseUrlURL = URL(string: baseURL) else { throw URLError(.badURL) }
-        
-        var components = URLComponents(url: baseUrlURL.appendingPathComponent(endpoint), resolvingAgainstBaseURL: true)
-        components?.queryItems = [URLQueryItem(name: "key", value: context.apiKey)]
-        
-        guard let url = components?.url else { throw URLError(.badURL) }
-        
+    public func sendComplexRequest(
+        _ endpoint: String,
+        body: [String: Any],
+        queryItems: [URLQueryItem] = [],
+        additionalHeaders: [String: String] = [:]
+    ) async throws -> Data {
+        return try await sendRawRequest(
+            endpoint,
+            body: body,
+            queryItems: queryItems,
+            additionalHeaders: additionalHeaders
+        )
+    }
+
+    private func sendRawRequest(
+        _ endpoint: String,
+        body: [String: Any],
+        queryItems: [URLQueryItem] = [],
+        additionalHeaders: [String: String] = [:]
+    ) async throws -> Data {
+        let url = try makeEndpointURL(endpoint, additionalQueryItems: queryItems)
+
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
-        
-        // Headers
+
         for (key, value) in context.headers {
             request.setValue(value, forHTTPHeaderField: key)
         }
-        
-        // Merge Context + Complex Body
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        for (key, value) in additionalHeaders {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+
+        if let host = URL(string: baseURL)?.host {
+            let origin = "https://\(host)"
+            request.setValue(origin, forHTTPHeaderField: "Origin")
+            request.setValue("\(origin)/", forHTTPHeaderField: "Referer")
+        }
+
         var payload = context.body
         for (key, value) in body {
             payload[key] = value
         }
-        
+
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-        
+
         let (data, response) = try await session.data(for: request)
-        
+
         guard let httpResponse = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
         }
-        
+
         if httpResponse.statusCode != 200 {
+            if let requestBody = request.httpBody,
+               let requestBodyString = String(data: requestBody, encoding: .utf8) {
+                print("❌ YouTube Request URL: \(url.absoluteString)")
+                print("❌ YouTube Request Body: \(requestBodyString)")
+            }
             if let errorString = String(data: data, encoding: .utf8) {
                 print("❌ YouTube Error (\(httpResponse.statusCode)): \(errorString)")
             }
             throw URLError(.badServerResponse)
         }
-        
+
         return data
+    }
+
+    private func makeEndpointURL(_ endpoint: String, additionalQueryItems: [URLQueryItem] = []) throws -> URL {
+        guard let rootURL = URL(string: baseURL) else {
+            throw URLError(.badURL)
+        }
+
+        let trimmed = endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        let endpointPath: String
+        if trimmed.isEmpty {
+            endpointPath = "v1"
+        } else if trimmed == "v1" || trimmed.hasPrefix("v1/") {
+            endpointPath = trimmed
+        } else {
+            endpointPath = "v1/\(trimmed)"
+        }
+
+        var components = URLComponents(url: rootURL.appendingPathComponent(endpointPath), resolvingAgainstBaseURL: true)
+        var queryItems = [URLQueryItem(name: "key", value: context.apiKey)]
+        queryItems.append(contentsOf: additionalQueryItems)
+        components?.queryItems = queryItems
+
+        guard let finalURL = components?.url else {
+            throw URLError(.badURL)
+        }
+
+        return finalURL
     }
 }

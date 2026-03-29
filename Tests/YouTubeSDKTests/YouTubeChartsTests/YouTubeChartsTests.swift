@@ -5,6 +5,7 @@ struct YouTubeChartsTests {
     @Test("Connect to YouTube Charts")
     func testChartsConnection() async throws {
         let client = YouTubeChartsClient()
-        try await client.getTopSongs()
+        let songs = try await client.getTopSongs()
+        #expect(!songs.isEmpty)
     }
 }

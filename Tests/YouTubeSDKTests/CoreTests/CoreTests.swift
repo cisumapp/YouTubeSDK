@@ -24,6 +24,19 @@ struct CoreTests {
         #expect(context.headers["User-Agent"] == config.userAgent)
     }
 
+    @Test("Charts analytics client identity contract")
+    func chartsAnalyticsContextContract() {
+        let context = InnerTubeContext(client: .webMusicAnalytics)
+        let body = context.body
+        let contextDict = body["context"] as? [String: Any]
+        let clientDict = contextDict?["client"] as? [String: Any]
+
+        #expect(context.headers["X-YouTube-Client-Name"] == "31")
+        #expect(context.headers["X-YouTube-Client-Version"] == "2.0")
+        #expect(clientDict?["clientName"] as? String == "WEB_MUSIC_ANALYTICS")
+        #expect(clientDict?["clientVersion"] as? String == "2.0")
+    }
+
     // MARK: - Integration Tests
     
     @Test("Real Network Call (Guide Endpoint)")

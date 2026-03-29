@@ -29,4 +29,11 @@ struct YouTubeSDKTests {
         // Print it just to feel good
         print("✅ Fetched: \(video.title) by \(video.author)")
     }
+
+    @Test("Fetch Home Feed")
+    func fetchHomeFeed() async throws {
+        let client = YouTubeClient()
+        let feed = try await client.getHome()
+        #expect(!feed.items.isEmpty)
+    }
 }

@@ -125,6 +125,117 @@ public struct YouTubeMusicSong: Identifiable, Sendable {
         
         self.isExplicit = explicitBadgeFound
     }
+
+    /// Parser for `playlistPanelVideoRenderer` payloads returned by `next` and `music/get_queue`.
+    init?(fromPlaylistPanelRenderer data: [String: Any]) {
+        var extractedId: String?
+
+        if let vid = data["videoId"] as? String {
+            extractedId = vid
+        } else if let endpoint = data["navigationEndpoint"] as? [String: Any],
+                  let watch = endpoint["watchEndpoint"] as? [String: Any],
+                  let vid = watch["videoId"] as? String {
+            extractedId = vid
+        }
+
+        guard let finalId = extractedId else { return nil }
+        self.id = finalId
+        self.videoId = finalId
+
+        if let titleData = data["title"] as? [String: Any],
+           let simple = titleData["simpleText"] as? String,
+           !simple.isEmpty {
+            self.title = simple
+        } else if let titleData = data["title"] as? [String: Any],
+                  let runs = titleData["runs"] as? [[String: Any]],
+                  let firstTitle = runs.first?["text"] as? String,
+                  !firstTitle.isEmpty {
+            self.title = firstTitle
+        } else {
+            self.title = "Unknown Title"
+        }
+
+        var foundArtists: [String] = []
+        var foundAlbum: String?
+        var foundDuration: TimeInterval?
+
+        let bylineRuns: [[String: Any]] =
+            ((data["longBylineText"] as? [String: Any])?["runs"] as? [[String: Any]]) ??
+            ((data["shortBylineText"] as? [String: Any])?["runs"] as? [[String: Any]]) ?? []
+
+        for run in bylineRuns {
+            guard let text = run["text"] as? String else { continue }
+
+            if let endpoint = run["navigationEndpoint"] as? [String: Any],
+               let browse = endpoint["browseEndpoint"] as? [String: Any],
+               let supportedConfigs = browse["browseEndpointContextSupportedConfigs"] as? [String: Any],
+               let musicConfig = supportedConfigs["browseEndpointContextMusicConfig"] as? [String: Any],
+               let pageType = musicConfig["pageType"] as? String {
+                if pageType == "MUSIC_PAGE_TYPE_ARTIST" {
+                    foundArtists.append(text)
+                } else if pageType == "MUSIC_PAGE_TYPE_ALBUM", foundAlbum == nil {
+                    foundAlbum = text
+                }
+                continue
+            }
+
+            if foundDuration == nil, text.contains(":"), let parsedDuration = Self.parseDuration(text) {
+                foundDuration = parsedDuration
+            }
+        }
+
+        if foundArtists.isEmpty {
+            let fallbackParts = bylineRuns
+                .compactMap { $0["text"] as? String }
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty && $0 != "•" && $0 != "-" }
+                .filter {
+                    !(($0.contains(":")) && Self.parseDuration($0) != nil)
+                }
+
+            if let firstArtist = fallbackParts.first {
+                foundArtists = [firstArtist]
+            }
+
+            if foundAlbum == nil, fallbackParts.count > 1 {
+                foundAlbum = fallbackParts[1]
+            }
+        }
+
+        self.artists = foundArtists
+        self.album = foundAlbum
+
+        if foundDuration == nil,
+           let lengthData = data["lengthText"] as? [String: Any],
+           let simpleLength = lengthData["simpleText"] as? String {
+            foundDuration = Self.parseDuration(simpleLength)
+        }
+
+        self.duration = foundDuration
+
+        if let thumbnail = data["thumbnail"] as? [String: Any],
+           let thumbs = thumbnail["thumbnails"] as? [[String: Any]],
+           let urlString = thumbs.last?["url"] as? String {
+            self.thumbnailURL = URL(string: urlString)
+        } else {
+            self.thumbnailURL = nil
+        }
+
+        var explicitBadgeFound = false
+        if let badges = data["badges"] as? [[String: Any]] {
+            for badge in badges {
+                if let renderer = badge["musicInlineBadgeRenderer"] as? [String: Any],
+                   let icon = renderer["icon"] as? [String: Any],
+                   let type = icon["iconType"] as? String,
+                   type == "MUSIC_EXPLICIT_BADGE" {
+                    explicitBadgeFound = true
+                    break
+                }
+            }
+        }
+
+        self.isExplicit = explicitBadgeFound
+    }
     
     private static func parseDuration(_ string: String) -> TimeInterval? {
         let parts = string.split(separator: ":").compactMap { Double($0) }

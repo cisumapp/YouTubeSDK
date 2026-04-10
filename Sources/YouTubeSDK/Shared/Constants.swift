@@ -69,7 +69,14 @@ public struct YouTubeSDKConstants {
                 public static let newReleases = "FEmusic_new_releases"
                 public static let moods = "FEmusic_moods_and_genres"
                 public static let library = "FEmusic_library"
+                public static let libraryLanding = "FEmusic_library_landing"
+                public static let likedPlaylists = "FEmusic_liked_playlists"
+                public static let libraryCorpusTrackArtists = "FEmusic_library_corpus_track_artists"
+                public static let libraryCorpusArtists = "FEmusic_library_corpus_artists"
+                public static let libraryAlbums = "FEmusic_library_albums"
+                public static let librarySongs = "FEmusic_library_songs"
                 public static let history = "FEmusic_history"
+                public static let likedMusic = "VLLM"
                 public static let likedVideos = "FEmusic_liked_videos"
             }
         }

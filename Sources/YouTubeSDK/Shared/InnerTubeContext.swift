@@ -15,12 +15,20 @@ public struct InnerTubeContext: Sendable {
     
     private let gl: String // Geo-Location (e.g., "US")
     private let hl: String // Host Language (e.g., "en")
+    private let onBehalfOfUser: String?
     
-    public init(client: ClientConfig, cookies: String? = nil, gl: String = "US", hl: String = "en") {
+    public init(
+        client: ClientConfig,
+        cookies: String? = nil,
+        gl: String = "US",
+        hl: String = "en",
+        onBehalfOfUser: String? = nil
+    ) {
         self.client = client
         self.cookies = cookies
         self.gl = gl
         self.hl = hl
+        self.onBehalfOfUser = onBehalfOfUser?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     // MARK: - Public Properties for Networking
@@ -52,6 +60,14 @@ public struct InnerTubeContext: Sendable {
     
     /// The JSON body required for the HTTP Request.
     public var body: [String: Any] {
+        var user: [String: Any] = [
+            "lockedSafetyMode": false
+        ]
+
+        if let onBehalfOfUser, !onBehalfOfUser.isEmpty {
+            user["onBehalfOfUser"] = onBehalfOfUser
+        }
+
         return [
             "context": [
                 "client": [
@@ -62,9 +78,7 @@ public struct InnerTubeContext: Sendable {
                     "timeZone": "UTC",
                     "utcOffsetMinutes": 0
                 ],
-                "user": [
-                    "lockedSafetyMode": false
-                ]
+                "user": user
             ]
         ]
     }

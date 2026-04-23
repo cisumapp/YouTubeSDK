@@ -39,7 +39,15 @@ public class YouTubeAVPlayer: AVPlayer, ObservableObject {
                 
                 if let streamURL = self.selectBestStream(for: video, preferAudio: preferAudio) {
                     print("▶️ Loading Stream: \(streamURL)")
-                    let item = AVPlayerItem(url: streamURL)
+                    
+                    let headers: [String: String] = [
+                        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+                        "Referer": "https://www.youtube.com/",
+                        "Origin": "https://www.youtube.com"
+                    ]
+                    
+                    let asset = AVURLAsset(url: streamURL, options: ["AVURLAssetHTTPHeaderFieldsKey": headers])
+                    let item = AVPlayerItem(asset: asset)
                     self.replaceCurrentItem(with: item)
                     self.play()
                 } else {

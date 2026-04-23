@@ -21,7 +21,7 @@ actor Cipher {
         
         // 1. Fetch the raw HTML of a video page (any video works)
         // We use the Web Client because it always has the script reference
-        let htmlData = try await network.get("https://www.youtube.com/watch?v=dQw4w9WgXcQ", body: [:])
+        let htmlData = try await network.fetchRawHTML("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
         // Note: You might need to add a 'sendGET' method to NetworkClient that takes a full URL string
         
         guard let html = String(data: htmlData, encoding: .utf8) else { throw URLError(.cannotParseResponse) }
@@ -48,7 +48,7 @@ actor Cipher {
             
             // We need to fetch the raw JS text.
             // Note: Ensure NetworkClient allows GET requests to external URLs
-            let scriptData = try await network.get(scriptURL, body: [:])
+            let scriptData = try await network.fetchRawHTML(scriptURL)
             guard let script = String(data: scriptData, encoding: .utf8) else {
                 throw URLError(.cannotParseResponse)
             }

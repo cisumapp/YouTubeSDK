@@ -44,6 +44,24 @@ public actor NetworkClient {
         }
         return try await sendRawRequest(endpoint, body: typedBody)
     }
+
+    /// Specifically for fetching HTML pages or static scripts (uses GET).
+    public func fetchRawHTML(_ urlString: String) async throws -> Data {
+        guard let url = URL(string: urlString) else { throw URLError(.badURL) }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        
+        // Use the context headers (User-Agent is critical)
+        for (key, value) in context.headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        
+        let (data, response) = try await session.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+            throw URLError(.badServerResponse)
+        }
+        return data
+    }
     
     // Overload for complex bodies (needed for Charts & Analytics)
     /// Sends a request with a complex nested body (required for Like, Subscribe, etc.)
@@ -115,6 +133,21 @@ public actor NetworkClient {
     }
 
     private func makeEndpointURL(_ endpoint: String, additionalQueryItems: [URLQueryItem] = []) throws -> URL {
+        // If the endpoint is already a full URL, use it directly
+        if let absoluteURL = URL(string: endpoint), absoluteURL.scheme != nil {
+            var components = URLComponents(url: absoluteURL, resolvingAgainstBaseURL: true)
+            var queryItems = components?.queryItems ?? []
+            // Add the API key if it's not already there (though usually only needed for InnerTube endpoints)
+            if !queryItems.contains(where: { $0.name == "key" }) {
+                queryItems.append(URLQueryItem(name: "key", value: context.apiKey))
+            }
+            queryItems.append(contentsOf: additionalQueryItems)
+            components?.queryItems = queryItems
+            
+            guard let finalURL = components?.url else { throw URLError(.badURL) }
+            return finalURL
+        }
+
         guard let rootURL = URL(string: baseURL) else {
             throw URLError(.badURL)
         }

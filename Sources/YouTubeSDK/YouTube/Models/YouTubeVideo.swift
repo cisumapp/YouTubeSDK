@@ -44,9 +44,9 @@ public struct YouTubeVideo: Decodable, Identifiable, Sendable {
         let details = try container.nestedContainer(keyedBy: VideoDetailsKeys.self, forKey: .videoDetails)
         self.id = try details.decode(String.self, forKey: .videoId)
         self.title = try details.decode(String.self, forKey: .title)
-        self.viewCount = try details.decode(String.self, forKey: .viewCount)
-        self.author = try details.decode(String.self, forKey: .author)
-        self.channelId = try details.decode(String.self, forKey: .channelId)
+        self.viewCount = try details.decodeIfPresent(String.self, forKey: .viewCount) ?? "0"
+        self.author = try details.decodeIfPresent(String.self, forKey: .author) ?? "Unknown"
+        self.channelId = try details.decodeIfPresent(String.self, forKey: .channelId) ?? ""
         self.description = try details.decodeIfPresent(String.self, forKey: .shortDescription) ?? ""
         self.lengthInSeconds = try details.decodeIfPresent(String.self, forKey: .lengthInSeconds) ?? "0"
         

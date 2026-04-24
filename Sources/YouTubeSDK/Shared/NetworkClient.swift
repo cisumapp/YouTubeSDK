@@ -79,6 +79,84 @@ public actor NetworkClient {
         )
     }
 
+    /// Sends a request like `sendComplexRequest` but injects `visitorData` into the
+    /// nested `context.client.visitorData` path while preserving the rest of the
+    /// generated `context` payload. This is required for certain player requests.
+    public func sendWithVisitorData(
+        _ endpoint: String,
+        body: [String: Any] = [:],
+        visitorData: String? = nil,
+        queryItems: [URLQueryItem] = [],
+        additionalHeaders: [String: String] = [:]
+    ) async throws -> Data {
+        var payload = context.body
+
+        // Inject visitorData into context.client while preserving other context fields
+        if let visitor = visitorData {
+            if var contextObj = payload["context"] as? [String: Any] {
+                if var clientObj = contextObj["client"] as? [String: Any] {
+                    clientObj["visitorData"] = visitor
+                    contextObj["client"] = clientObj
+                } else {
+                    contextObj["client"] = ["visitorData": visitor]
+                }
+                payload["context"] = contextObj
+            } else {
+                payload["context"] = ["client": ["visitorData": visitor]]
+            }
+        }
+
+        // Merge caller-provided top-level fields (e.g., videoId)
+        for (key, value) in body {
+            payload[key] = value
+        }
+
+        let url = try makeEndpointURL(endpoint, additionalQueryItems: queryItems)
+        YouTubeDebugLogger.log("Sending request to \(url.path) (visitorDataInjected=\(visitorData != nil))")
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+
+        for (key, value) in context.headers {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        for (key, value) in additionalHeaders {
+            request.setValue(value, forHTTPHeaderField: key)
+        }
+
+        if let host = URL(string: baseURL)?.host {
+            let origin = "https://\(host)"
+            request.setValue(origin, forHTTPHeaderField: "Origin")
+            request.setValue("\(origin)/", forHTTPHeaderField: "Referer")
+        }
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            YouTubeDebugLogger.log("Request to \(url.path) failed: No HTTP response")
+            throw URLError(.badServerResponse)
+        }
+
+        if httpResponse.statusCode != 200 {
+            YouTubeDebugLogger.log("Request to \(url.path) failed with status \(httpResponse.statusCode)")
+            if let requestBody = request.httpBody,
+               let requestBodyString = String(data: requestBody, encoding: .utf8) {
+                print("❌ YouTube Request URL: \(url.absoluteString)")
+                print("❌ YouTube Request Body: \(requestBodyString)")
+            }
+            if let errorString = String(data: data, encoding: .utf8) {
+                print("❌ YouTube Error (\(httpResponse.statusCode)): \(errorString)")
+            }
+            throw URLError(.badServerResponse)
+        }
+
+        YouTubeDebugLogger.log("Request to \(url.path) succeeded (\(data.count) bytes)")
+        return data
+    }
+
     private func sendRawRequest(
         _ endpoint: String,
         body: [String: Any],
@@ -86,6 +164,7 @@ public actor NetworkClient {
         additionalHeaders: [String: String] = [:]
     ) async throws -> Data {
         let url = try makeEndpointURL(endpoint, additionalQueryItems: queryItems)
+        YouTubeDebugLogger.log("Sending request to \(url.path)")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -114,10 +193,12 @@ public actor NetworkClient {
         let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
+            YouTubeDebugLogger.log("Request to \(url.path) failed: No HTTP response")
             throw URLError(.badServerResponse)
         }
 
         if httpResponse.statusCode != 200 {
+            YouTubeDebugLogger.log("Request to \(url.path) failed with status \(httpResponse.statusCode)")
             if let requestBody = request.httpBody,
                let requestBodyString = String(data: requestBody, encoding: .utf8) {
                 print("❌ YouTube Request URL: \(url.absoluteString)")
@@ -129,6 +210,7 @@ public actor NetworkClient {
             throw URLError(.badServerResponse)
         }
 
+        YouTubeDebugLogger.log("Request to \(url.path) succeeded (\(data.count) bytes)")
         return data
     }
 

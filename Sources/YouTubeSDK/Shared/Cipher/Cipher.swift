@@ -8,9 +8,10 @@
 import Foundation
 
 actor Cipher {
-    // We cache the script URL because it changes rarely
+    // We cache the script URL and content because it changes rarely
     static let shared = Cipher()
     private var cachedScriptURL: String?
+    private var cachedScriptContent: String?
     
     private let engine = DecipherEngine()
     private var isEngineReady: Bool = false
@@ -22,7 +23,6 @@ actor Cipher {
         // 1. Fetch the raw HTML of a video page (any video works)
         // We use the Web Client because it always has the script reference
         let htmlData = try await network.fetchRawHTML("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
-        // Note: You might need to add a 'sendGET' method to NetworkClient that takes a full URL string
         
         guard let html = String(data: htmlData, encoding: .utf8) else { throw URLError(.cannotParseResponse) }
         
@@ -38,43 +38,77 @@ actor Cipher {
         let fullURL = "https://www.youtube.com\(path)"
         
         self.cachedScriptURL = fullURL
+        print("DECIPHER ENGINE: Discovered player script at \(fullURL)")
         return fullURL
+    }
+
+    private func ensureEngineReady(network: NetworkClient) async throws {
+        if isEngineReady { return }
+
+        let scriptURL = try await getCipherScriptURL(network: network)
+        
+        let script: String
+        if let cached = cachedScriptContent {
+            script = cached
+        } else {
+            print("DECIPHER ENGINE: Fetching script content from network...")
+            let scriptData = try await network.fetchRawHTML(scriptURL)
+            guard let content = String(data: scriptData, encoding: .utf8) else {
+                throw URLError(.cannotParseResponse)
+            }
+            self.cachedScriptContent = content
+            script = content
+        }
+        
+        try engine.loadCipherScript(script)
+        isEngineReady = true
     }
     
     func decipher(url: String, signatureCipher: String, network: NetworkClient) async throws -> URL {
-        if !isEngineReady {
-            let scriptURL = try await getCipherScriptURL(network: network)
-            print("Fetching Cipher Script: \(scriptURL)")
-            
-            // We need to fetch the raw JS text.
-            // Note: Ensure NetworkClient allows GET requests to external URLs
-            let scriptData = try await network.fetchRawHTML(scriptURL)
-            guard let script = String(data: scriptData, encoding: .utf8) else {
-                throw URLError(.cannotParseResponse)
-            }
-            
-            try engine.loadCipherScript(script)
-            isEngineReady = true
-        }
+        try await ensureEngineReady(network: network)
         
-        // 2. Parse the cipher string
+        // 1. Parse the cipher string
         let cipherParams = parseCipher(signatureCipher)
-        guard let signature = cipherParams["s"], let signatureParams = cipherParams["sp"] else {
-            return URL(string: url)!
+        let originalURLString = cipherParams["url"] ?? url
+        
+        // 2. Decipher Signature (s)
+        var finalURLString = originalURLString
+        if let signature = cipherParams["s"], let signatureParams = cipherParams["sp"] {
+            let decryptedSignature = try engine.decipher(signature: signature)
+            var components = URLComponents(string: finalURLString)
+            var queryItems = components?.queryItems ?? []
+            queryItems.append(URLQueryItem(name: signatureParams, value: decryptedSignature))
+            components?.queryItems = queryItems
+            finalURLString = components?.url?.absoluteString ?? finalURLString
         }
         
-        let decryptedSignature = try engine.decipher(signature: signature)
-        
-        // 3. Construct the final URL
-        // Original URL + "&sig=DBCA" (or whatever 'sp' is, usually 'sig')
-        var components = URLComponents(string: cipherParams["url"] ?? url)
+        // 3. Decipher 'n' parameter (throttling)
+        do {
+            return try await decipherN(url: finalURLString, network: network)
+        } catch {
+            print("DECIPHER ENGINE: DecipherN failed, resetting engine state: \(error)")
+            isEngineReady = false // Force re-load on next attempt
+            throw error
+        }
+    }
+
+    func decipherN(url: String, network: NetworkClient) async throws -> URL {
+        try await ensureEngineReady(network: network)
+
+        var components = URLComponents(string: url)
         var queryItems = components?.queryItems ?? []
-        queryItems.append(URLQueryItem(name: signatureParams, value: decryptedSignature))
-        components?.queryItems = queryItems
+        
+        if let index = queryItems.firstIndex(where: { $0.name == "n" }),
+           let nValue = queryItems[index].value {
+            let decipheredN = try engine.decipherN(nValue: nValue)
+            queryItems[index].value = decipheredN
+            components?.queryItems = queryItems
+        }
         
         guard let finalURL = components?.url else { throw URLError(.badURL) }
         return finalURL
     }
+
 }
 
 extension Cipher {

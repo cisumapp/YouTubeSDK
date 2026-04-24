@@ -123,33 +123,71 @@ public actor YouTubeClient {
 //        print("yt_search_debug client=\(clientName) saved=\(tempURL.path)")
 //    }
 
-    /// Fetches the full video details, including Streaming URLs (HLS).
-    public func video(id: String) async throws -> YouTubeVideo {
+    /// Fetches the full video details.
+    /// - Parameters:
+    ///   - id: The video ID.
+    ///   - decipher: Whether to resolve encrypted signature and 'n' parameters. Set to false for metadata-only prefetching.
+    public func video(id: String, decipher: Bool = true) async throws -> YouTubeVideo {
         let data = try await network.get("player", body: ["videoId": id])
+        
         let decoder = JSONDecoder()
         var video = try decoder.decode(YouTubeVideo.self, from: data)
         
-        if video.requiresDeciphering {
-            if var streamingData = video.streamingData {
-                var newFormats: [Stream] = []
-                for var stream in streamingData.adaptiveFormats {
-                    if let cipher = stream.signatureCipher {
-                        do {
-                            let decryptedURL = try await Cipher.shared.decipher(url: stream.url ?? "", signatureCipher: cipher, network: network)
-                            stream.url = decryptedURL.absoluteString
-                            stream.signatureCipher = nil
-                        } catch {
-                            print("⚠️ Failed to decipher stream: \(error)")
-                        }
+        if decipher, var streamingData = video.streamingData {
+
+
+            // 1. Process Adaptive Formats
+            var newAdaptive: [Stream] = []
+            // Limit deciphering to the first few streams (usually the highest quality) to avoid JS overhead
+            for var stream in streamingData.adaptiveFormats.prefix(5) {
+                if let cipher = stream.signatureCipher {
+                    do {
+                        let decryptedURL = try await Cipher.shared.decipher(url: stream.url ?? "", signatureCipher: cipher, network: network)
+                        stream.url = decryptedURL.absoluteString
+                        stream.signatureCipher = nil
+                    } catch {
+                        print("⚠️ Failed to decipher signature: \(error)")
                     }
-                    newFormats.append(stream)
+                } else if let url = stream.url {
+                    do {
+                        let decryptedURL = try await Cipher.shared.decipherN(url: url, network: network)
+                        stream.url = decryptedURL.absoluteString
+                    } catch {
+                        print("⚠️ Failed to decipher 'n' parameter: \(error)")
+                    }
                 }
-                streamingData.adaptiveFormats = newFormats
-                video.streamingData = streamingData
+                newAdaptive.append(stream)
             }
+            streamingData.adaptiveFormats = newAdaptive
+            
+            // 2. Process Muxed Formats
+            var newFormats: [Stream] = []
+            for var stream in streamingData.formats.prefix(3) {
+                if let cipher = stream.signatureCipher {
+                    do {
+                        let decryptedURL = try await Cipher.shared.decipher(url: stream.url ?? "", signatureCipher: cipher, network: network)
+                        stream.url = decryptedURL.absoluteString
+                        stream.signatureCipher = nil
+                    } catch {
+                        print("⚠️ Failed to decipher signature: \(error)")
+                    }
+                } else if let url = stream.url {
+                    do {
+                        let decryptedURL = try await Cipher.shared.decipherN(url: url, network: network)
+                        stream.url = decryptedURL.absoluteString
+                    } catch {
+                        print("⚠️ Failed to decipher 'n' parameter: \(error)")
+                    }
+                }
+                newFormats.append(stream)
+            }
+            streamingData.formats = newFormats
+            
+            video.streamingData = streamingData
         }
         return video
     }
+
 
     /// Fetches search suggestions for Main YouTube using an external suggest endpoint.
     /// - Parameter query: The search term.

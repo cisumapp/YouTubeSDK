@@ -32,7 +32,7 @@ public struct Stream: Decodable, Sendable {
 
 public struct StreamingData: Decodable, Sendable {
     public let expiresInSeconds: String?
-    public let formats: [Stream]         // Muxed (Video + Audio)
+    public var formats: [Stream]         // Muxed (Video + Audio)
     public var adaptiveFormats: [Stream] // Separate tracks
     public let hlsManifestUrl: String?   // The golden ticket for iOS AVPlayer
     

@@ -86,6 +86,7 @@ public actor NetworkClient {
         additionalHeaders: [String: String] = [:]
     ) async throws -> Data {
         let url = try makeEndpointURL(endpoint, additionalQueryItems: queryItems)
+        YouTubeDebugLogger.log("Sending request to \(url.path)")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -114,10 +115,12 @@ public actor NetworkClient {
         let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
+            YouTubeDebugLogger.log("Request to \(url.path) failed: No HTTP response")
             throw URLError(.badServerResponse)
         }
 
         if httpResponse.statusCode != 200 {
+            YouTubeDebugLogger.log("Request to \(url.path) failed with status \(httpResponse.statusCode)")
             if let requestBody = request.httpBody,
                let requestBodyString = String(data: requestBody, encoding: .utf8) {
                 print("❌ YouTube Request URL: \(url.absoluteString)")
@@ -129,6 +132,7 @@ public actor NetworkClient {
             throw URLError(.badServerResponse)
         }
 
+        YouTubeDebugLogger.log("Request to \(url.path) succeeded (\(data.count) bytes)")
         return data
     }
 

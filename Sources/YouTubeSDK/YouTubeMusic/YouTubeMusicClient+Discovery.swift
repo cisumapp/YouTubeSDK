@@ -368,16 +368,12 @@ extension YouTubeMusicClient {
     }
 
     private func extractUniqueSongs(from items: [YouTubeMusicItem], seenVideoIDs: inout Set<String>) -> [YouTubeMusicSong] {
-        var songs: [YouTubeMusicSong] = []
-
-        for item in items {
-            guard case .song(let song) = item,
-                  seenVideoIDs.insert(song.videoId).inserted else {
-                continue
-            }
-            songs.append(song)
+        let songs = items.compactMap { item -> YouTubeMusicSong? in
+            guard case .song(let song) = item else { return nil }
+            return song
         }
-
-        return songs
+        
+        let unique = songs.filter { seenVideoIDs.insert($0.videoId).inserted }
+        return unique
     }
 }

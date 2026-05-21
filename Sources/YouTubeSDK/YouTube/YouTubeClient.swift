@@ -9,19 +9,76 @@ import Foundation
 
 public actor YouTubeClient {
     let network: NetworkClient
+    let playerNetwork: NetworkClient
     let webSearchNetwork: NetworkClient
     let cookies: String?
+    let accessToken: String?
     let visitorManager: VisitorDataManager
-    
+    let poTokenProvider: PoTokenProvider?
+
+    // poToken cache - video-specific, expires after hours
+    private var cachedPoToken: String?
+    private var cachedPoTokenVideoId: String?
+    private var cachedPoTokenExpiry: Date?
+
+    /// Limits concurrent player requests to avoid rate limiting / bot detection.
+    private var activePlayerRequests = 0
+    private let maxPlayerRequests = 1
+    private var playerRequestWaiters: [CheckedContinuation<Void, Never>] = []
+
     /// Initializes the Client.
-    /// - Parameter cookies: Optional "Cookie" header string. If provided, requests will be authenticated.
-    public init(cookies: String? = nil) {
+    /// - Parameters:
+    ///   - cookies: Optional "Cookie" header string. If provided, requests will be authenticated via cookies.
+    ///   - accessToken: Optional OAuth Bearer token. If provided, requests will be authenticated via OAuth.
+    ///   - poTokenProvider: Optional poToken provider. Required for YouTube streams as of May 2026.
+    public init(cookies: String? = nil, accessToken: String? = nil, poTokenProvider: PoTokenProvider? = nil) {
         self.cookies = cookies
-        let context = InnerTubeContext(client: ClientConfig.ios, cookies: cookies)
-        let webContext = InnerTubeContext(client: ClientConfig.web, cookies: cookies)
+        self.accessToken = accessToken
+        self.poTokenProvider = poTokenProvider
+        let context = InnerTubeContext(client: ClientConfig.ios, cookies: nil, accessToken: nil)
+        let webContext = InnerTubeContext(client: ClientConfig.web, cookies: cookies, accessToken: accessToken)
         self.network = NetworkClient(context: context)
+        self.playerNetwork = NetworkClient(context: context, baseURL: YouTubeSDKConstants.URLS.API.googleapisInnerTubeURL)
         self.webSearchNetwork = NetworkClient(context: webContext)
         self.visitorManager = VisitorDataManager(session: .shared, client: ClientConfig.web, cookies: cookies)
+    }
+
+    /// Returns a valid poToken for the given video ID, fetching if necessary.
+    private func getPoToken(for videoId: String) async -> String? {
+        // Return cached token if valid for this video
+        if cachedPoToken != nil, cachedPoTokenVideoId == videoId,
+           let expiry = cachedPoTokenExpiry, expiry > Date() {
+            return cachedPoToken
+        }
+
+        // Try to fetch new token
+        if let provider = poTokenProvider, let token = try? await provider.token(for: videoId) {
+            cachedPoToken = token
+            cachedPoTokenVideoId = videoId
+            cachedPoTokenExpiry = Date().addingTimeInterval(6 * 3600) // 6 hour expiry
+            return token
+        }
+
+        return nil
+    }
+
+    private func waitForPlayerSlot() async {
+        if activePlayerRequests < maxPlayerRequests {
+            activePlayerRequests += 1
+            return
+        }
+        await withCheckedContinuation { continuation in
+            playerRequestWaiters.append(continuation)
+        }
+    }
+
+    private func releasePlayerSlot() {
+        if let next = playerRequestWaiters.first {
+            playerRequestWaiters.removeFirst()
+            next.resume()
+        } else {
+            activePlayerRequests -= 1
+        }
     }
 
     // MARK: - Browsing
@@ -34,7 +91,7 @@ public actor YouTubeClient {
         let searchNetwork = makeWebSearchNetwork(regionCode: regionCode, languageCode: languageCode)
 
         // Home parsing is tuned to WEB browse payloads (rich wrappers and continuation shape).
-        let data = try await searchNetwork.get("browse", body: ["browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.home])
+        let data = try await browseHomeData(regionCode: regionCode, languageCode: languageCode)
         var parsedHome = parseContinuationResults(from: data)
         if musicOnly {
             parsedHome = filteredMusicContinuation(parsedHome)
@@ -75,40 +132,54 @@ public actor YouTubeClient {
     }
     
     public func getTrending() async throws -> [YouTubeVideo] {
-        let data = try await network.get("browse", body: ["browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.trending])
-        return await parseVideos(from: data)
+        let data = try await browseData(body: ["browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.trending])
+        return parseVideos(from: data)
     }
     
     public func getChannelVideos(channelId: String) async throws -> [YouTubeVideo] {
-        let data = try await network.get("browse", body: ["browseId": channelId, "params": "EgZ2aWRlb3M%3D"])
-        return await parseVideos(from: data)
+        let data = try await browseData(body: ["browseId": channelId, "params": "EgZ2aWRlb3M%3D"])
+        return parseVideos(from: data)
     }
     
     public func getPlaylist(id: String) async throws -> YouTubeContinuation<YouTubeVideo> {
         let browseId = id.hasPrefix("PL") ? "VL\(id)" : id
-        let data = try await network.get("browse", body: ["browseId": browseId])
+        let data = try await browseData(body: ["browseId": browseId])
         
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { 
             throw YouTubeError.parsingError(details: "Invalid JSON response for playlist")
         }
         
-        let videosRaw = await findAll(key: YouTubeSDKConstants.InternalKeys.Renderers.playlistVideo, in: json)
+        let videosRaw = findAll(key: YouTubeSDKConstants.InternalKeys.Renderers.playlistVideo, in: json)
         let videos = videosRaw.compactMap { item -> YouTubeVideo? in
             guard let dict = item as? [String: Any] else { return nil }
             return YouTubeVideo(from: dict)
         }
         
-        let token = await findContinuationToken(in: json)
+        let token = findContinuationToken(in: json)
         return YouTubeContinuation(items: videos, continuationToken: token)
     }
 
     public func search(_ query: String) async throws -> YouTubeContinuation<YouTubeItem> {
-        let data = try await webSearchNetwork.get("search", body: ["query": query])
-//        let diagnostics = diagnoseSearchResponse(from: data)
-//        print("yt_search_diagnostics client=WEB \(diagnostics.summary)")
-//        writeSearchDebugDump(data, clientName: "web")
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else {
+            return YouTubeContinuation(items: [], continuationToken: nil)
+        }
 
-        return parseContinuationResults(from: data)
+        do {
+            let data = try await webSearchNetwork.get("search", body: ["query": normalizedQuery])
+            return parseContinuationResults(from: data)
+        } catch {
+            let androidNetwork = NetworkClient(
+                context: InnerTubeContext(client: ClientConfig.android, cookies: cookies, accessToken: accessToken)
+            )
+
+            if let fallbackData = try? await androidNetwork.get("search", body: ["query": normalizedQuery]) {
+                YouTubeDebugLogger.log("search fallback used Android client for query=\"\(normalizedQuery)\"")
+                return parseContinuationResults(from: fallbackData)
+            }
+
+            throw error
+        }
     }
 
 //    public func writeSearchDebugDump(_ data: Data, clientName: String) {
@@ -125,72 +196,297 @@ public actor YouTubeClient {
 //        print("yt_search_debug client=\(clientName) saved=\(tempURL.path)")
 //    }
 
-    /// Fetches the full video details.
-    /// - Parameters:
-    ///   - id: The video ID.
-    ///   - decipher: Whether to resolve encrypted signature and 'n' parameters. Set to false for metadata-only prefetching.
-    public func video(id: String, decipher: Bool = true) async throws -> YouTubeVideo {
-        // Ensure we supply the visitorData token (if available) for playback endpoints.
+    // MARK: - Video (SmartTubeIOS-style — no decipher)
+
+    /// Fetches video player info using the iOS client (primary).
+    /// Does NOT do exhaustive retry — the ViewModel handles that.
+    /// Matches SmartTubeIOS's `fetchPlayerInfo(videoId:)` approach.
+    public func video(id: String) async throws -> YouTubeVideo {
+        await waitForPlayerSlot()
+        defer { releasePlayerSlot() }
+
         let visitor = try? await visitorManager.getVisitorData()
-        let data = try await network.sendWithVisitorData("player", body: ["videoId": id], visitorData: visitor)
-        
+
+        // Fetch poToken if provider is configured
+        let poToken = await getPoToken(for: id)
+
+        let body: [String: Any] = [
+            "videoId": id,
+            "racyCheckOk": true,
+            "contentCheckOk": true
+        ]
+
+        // iOS client on googleapis.com — matches SmartTubeIOS's postPlayer()
+        let contextWithPoToken = InnerTubeContext(
+            client: ClientConfig.ios,
+            cookies: nil,
+            accessToken: nil,
+            poToken: poToken
+        )
+        let iosPlayerNetwork = NetworkClient(
+            context: contextWithPoToken,
+            baseURL: YouTubeSDKConstants.URLS.API.googleapisInnerTubeURL
+        )
+
+        let data = try await iosPlayerNetwork.sendWithVisitorData(
+            "player",
+            body: NetworkClient.SendableBody(body),
+            visitorData: visitor
+        )
+
+        let decoder = JSONDecoder()
+        let video = try decoder.decode(YouTubeVideo.self, from: data)
+
+        if let sd = video.streamingData {
+            let audioCount = sd.adaptiveFormats.filter { $0.isAudioOnly && $0.playbackUrl != nil }.count
+            let muxedCount = sd.formats.filter { $0.playbackUrl != nil }.count
+            let hasHLS = sd.hlsManifestUrl != nil
+            print("[YouTubeSDK] iOS player result for \(id): audio=\(audioCount) muxed=\(muxedCount) hls=\(hasHLS) adaptive=\(sd.adaptiveFormats.count)")
+        } else {
+            print("[YouTubeSDK] iOS player: NO streamingData for \(id)")
+        }
+
+        return video
+    }
+
+    /// Fetches video using the Android client (fallback).
+    /// Android returns muxed formats (itag 18/22) that iOS omits.
+    /// Matches SmartTubeIOS's `fetchPlayerInfoAndroid(videoId:)`.
+    public func videoAndroid(id: String) async throws -> YouTubeVideo {
+        await waitForPlayerSlot()
+        defer { releasePlayerSlot() }
+
+        let body: [String: Any] = [
+            "videoId": id,
+            "racyCheckOk": true,
+            "contentCheckOk": true
+        ]
+
+        // Android client on googleapis.com — matches SmartTubeIOS's postAndroid()
+        let androidNetwork = NetworkClient(
+            context: InnerTubeContext(client: ClientConfig.android),
+            baseURL: YouTubeSDKConstants.URLS.API.googleapisInnerTubeURL
+        )
+
+        let data = try await androidNetwork.sendWithVisitorData(
+            "player",
+            body: NetworkClient.SendableBody(body)
+        )
+
+        let decoder = JSONDecoder()
+        let video = try decoder.decode(YouTubeVideo.self, from: data)
+
+        if let sd = video.streamingData {
+            let audioCount = sd.adaptiveFormats.filter { $0.isAudioOnly && $0.playbackUrl != nil }.count
+            let muxedCount = sd.formats.filter { $0.playbackUrl != nil }.count
+            let hasHLS = sd.hlsManifestUrl != nil
+            print("[YouTubeSDK] Android player result for \(id): audio=\(audioCount) muxed=\(muxedCount) hls=\(hasHLS) adaptive=\(sd.adaptiveFormats.count)")
+        } else {
+            print("[YouTubeSDK] Android player: NO streamingData for \(id)")
+        }
+
+        return video
+    }
+
+    /// Fetches video using the authenticated TV client (fallback for auth-required videos).
+    /// Matches SmartTubeIOS's `fetchPlayerInfoAuthenticated(videoId:)`.
+    public func videoTV(id: String) async throws -> YouTubeVideo {
+        await waitForPlayerSlot()
+        defer { releasePlayerSlot() }
+
+        let body: [String: Any] = [
+            "videoId": id,
+            "racyCheckOk": true,
+            "contentCheckOk": true
+        ]
+
+        let tvNetwork = NetworkClient(
+            context: InnerTubeContext(client: ClientConfig.tv, cookies: cookies, accessToken: accessToken),
+            baseURL: YouTubeSDKConstants.URLS.API.googleapisInnerTubeURL
+        )
+
+        let data = try await tvNetwork.sendWithVisitorData(
+            "player",
+            body: NetworkClient.SendableBody(body)
+        )
+
+        let decoder = JSONDecoder()
+        let video = try decoder.decode(YouTubeVideo.self, from: data)
+
+        if let sd = video.streamingData {
+            let muxedCount = sd.formats.filter { $0.playbackUrl != nil }.count
+            let hasHLS = sd.hlsManifestUrl != nil
+            print("[YouTubeSDK] TV player result for \(id): muxed=\(muxedCount) hls=\(hasHLS)")
+        }
+
+        return video
+    }
+
+    // MARK: - Old Decipher-Based Flow (Commented Out)
+    // The entire decipher engine + multi-client fallback chain is preserved below.
+    // All logs confirm cipher=nil and no 'n' param on every stream — the engine does nothing.
+    // Re-enable if YouTube ever re-introduces cipher-protected URLs.
+
+    /*
+    /// Old video() with decipher parameter — replaced by SmartTubeIOS-style approach above.
+    public func video_old_decipher(id: String, decipher: Bool = true) async throws -> YouTubeVideo {
+        await waitForPlayerSlot()
+
+        let visitor = try? await visitorManager.getVisitorData()
+        await Cipher.shared.ensureEngineReady(network: network)
+
+        let poToken = await getPoToken(for: id)
+        if let poToken = poToken {
+            print("DECIPHER ENGINE: Using poToken for video \(id)")
+        }
+
+        let body: [String: Any] = [
+            "videoId": id,
+            "racyCheckOk": true,
+            "contentCheckOk": true
+        ]
+
+        var video: YouTubeVideo
+        do {
+            let contextWithPoToken = InnerTubeContext(
+            client: ClientConfig.ios,
+            cookies: nil,
+            accessToken: nil,
+            poToken: poToken
+        )
+            let networkWithPoToken = NetworkClient(context: contextWithPoToken, baseURL: YouTubeSDKConstants.URLS.API.googleapisInnerTubeURL)
+            video = try await fetchAndDecipher(id: id, body: body, network: networkWithPoToken, visitor: visitor, decipher: decipher)
+
+            if decipher, !hasPlayableStreams(video) {
+                let webNetwork = NetworkClient(context: InnerTubeContext(client: ClientConfig.web, cookies: cookies, accessToken: nil))
+                if let fallback = try? await fetchAndDecipher(id: id, body: body, network: webNetwork, visitor: nil, decipher: decipher) {
+                    video = mergeStreams(into: video, from: fallback)
+                }
+            }
+
+            if decipher, !hasPlayableStreams(video) {
+                let iosMusicNetwork = NetworkClient(context: InnerTubeContext(client: ClientConfig.iosMusic, cookies: cookies, accessToken: nil))
+                if let fallback = try? await fetchAndDecipher(id: id, body: body, network: iosMusicNetwork, visitor: nil, decipher: decipher) {
+                    video = mergeStreams(into: video, from: fallback)
+                }
+            }
+
+            if decipher, !hasPlayableStreams(video) {
+                let androidVRNetwork = NetworkClient(context: InnerTubeContext(client: ClientConfig.androidVR, cookies: cookies, accessToken: nil))
+                if let fallback = try? await fetchAndDecipher(id: id, body: body, network: androidVRNetwork, visitor: nil, decipher: decipher) {
+                    video = mergeStreams(into: video, from: fallback)
+                }
+            }
+
+            if decipher, video.streamingData?.hlsManifestUrl == nil {
+                let embeddedNetwork = NetworkClient(context: InnerTubeContext(client: ClientConfig.webEmbedded, cookies: cookies, accessToken: nil))
+                if let fallback = try? await fetchAndDecipher(id: id, body: body, network: embeddedNetwork, visitor: nil, decipher: decipher) {
+                    video = mergeStreams(into: video, from: fallback)
+                }
+            }
+
+            let hasMuxedFormats = video.streamingData?.formats.contains(where: { $0.playbackUrl != nil }) == true
+            if decipher, !hasMuxedFormats {
+                let androidNetwork = NetworkClient(context: InnerTubeContext(client: ClientConfig.android, cookies: cookies, accessToken: nil))
+                if let fallback = try? await fetchAndDecipher(id: id, body: body, network: androidNetwork, visitor: nil, decipher: decipher) {
+                    video = mergeStreams(into: video, from: fallback)
+                }
+            }
+
+        } catch {
+            releasePlayerSlot()
+            throw error
+        }
+        releasePlayerSlot()
+        return video
+    }
+
+    private func mergeStreams(into primary: YouTubeVideo, from fallback: YouTubeVideo) -> YouTubeVideo {
+        guard fallback.streamingData != nil else { return primary }
+        var merged = primary
+        guard var fallbackSD = fallback.streamingData else { return primary }
+
+        if var primarySD = merged.streamingData {
+            if primarySD.hlsManifestUrl == nil {
+                primarySD.hlsManifestUrl = fallbackSD.hlsManifestUrl
+            }
+            if !primarySD.adaptiveFormats.contains(where: { $0.isAudioOnly && $0.playbackUrl != nil }) {
+                let audioStreams = fallbackSD.adaptiveFormats.filter { $0.isAudioOnly && $0.playbackUrl != nil }
+                primarySD.adaptiveFormats.append(contentsOf: audioStreams)
+            }
+            if !primarySD.formats.contains(where: { $0.playbackUrl != nil }) {
+                primarySD.formats = fallbackSD.formats.filter { $0.playbackUrl != nil }
+            }
+            merged.streamingData = primarySD
+        } else {
+            merged.streamingData = fallbackSD
+        }
+        return merged
+    }
+
+    private func printFallbackSummary(_ video: YouTubeVideo, label: String) {
+        let audio  = video.streamingData?.adaptiveFormats.filter { $0.isAudioOnly && $0.playbackUrl != nil }.count ?? 0
+        let muxed  = video.streamingData?.formats.filter { $0.playbackUrl != nil }.count ?? 0
+        let hasHLS = video.streamingData?.hlsManifestUrl != nil
+        print("DECIPHER ENGINE: \(label) merged — audio=\(audio) muxed=\(muxed) hls=\(hasHLS)")
+    }
+
+    private func hasPlayableStreams(_ video: YouTubeVideo) -> Bool {
+        let hasHLS   = !(video.streamingData?.hlsManifestUrl?.isEmpty ?? true)
+        let hasAudio = video.streamingData?.adaptiveFormats.contains(where: { $0.isAudioOnly && $0.playbackUrl != nil }) == true
+        let hasMuxed = video.streamingData?.formats.contains(where: { $0.playbackUrl != nil }) == true
+        return hasHLS || hasAudio || hasMuxed
+    }
+
+    private func fetchAndDecipher(id: String, body: [String: Any], network: NetworkClient, visitor: String?, decipher: Bool) async throws -> YouTubeVideo {
+        let data = try await network.sendWithVisitorData("player", body: NetworkClient.SendableBody(body), visitorData: visitor)
         let decoder = JSONDecoder()
         var video = try decoder.decode(YouTubeVideo.self, from: data)
-        
+
         if decipher, var streamingData = video.streamingData {
-
-
-            // 1. Process Adaptive Formats
             var newAdaptive: [Stream] = []
-            // Limit deciphering to the first few streams (usually the highest quality) to avoid JS overhead
-            for var stream in streamingData.adaptiveFormats.prefix(5) {
-                if let cipher = stream.signatureCipher {
-                    do {
-                        let decryptedURL = try await Cipher.shared.decipher(url: stream.url ?? "", signatureCipher: cipher, network: network)
+            for var stream in streamingData.adaptiveFormats {
+                if stream.proxyUrl != nil {
+                    newAdaptive.append(stream)
+                } else if let cipher = stream.signatureCipher {
+                    if let decryptedURL = await Cipher.shared.decipher(url: stream.url ?? "", signatureCipher: cipher, network: network) {
                         stream.url = decryptedURL.absoluteString
                         stream.signatureCipher = nil
-                    } catch {
-                        print("⚠️ Failed to decipher signature: \(error)")
+                        newAdaptive.append(stream)
                     }
                 } else if let url = stream.url {
-                    do {
-                        let decryptedURL = try await Cipher.shared.decipherN(url: url, network: network)
+                    if let decryptedURL = await Cipher.shared.decipherN(url: url, network: network) {
                         stream.url = decryptedURL.absoluteString
-                    } catch {
-                        print("⚠️ Failed to decipher 'n' parameter: \(error)")
                     }
+                    newAdaptive.append(stream)
                 }
-                newAdaptive.append(stream)
             }
             streamingData.adaptiveFormats = newAdaptive
-            
-            // 2. Process Muxed Formats
+
             var newFormats: [Stream] = []
-            for var stream in streamingData.formats.prefix(3) {
-                if let cipher = stream.signatureCipher {
-                    do {
-                        let decryptedURL = try await Cipher.shared.decipher(url: stream.url ?? "", signatureCipher: cipher, network: network)
+            for var stream in streamingData.formats {
+                if stream.proxyUrl != nil {
+                    newFormats.append(stream)
+                } else if let cipher = stream.signatureCipher {
+                    if let decryptedURL = await Cipher.shared.decipher(url: stream.url ?? "", signatureCipher: cipher, network: network) {
                         stream.url = decryptedURL.absoluteString
                         stream.signatureCipher = nil
-                    } catch {
-                        print("⚠️ Failed to decipher signature: \(error)")
+                        newFormats.append(stream)
                     }
                 } else if let url = stream.url {
-                    do {
-                        let decryptedURL = try await Cipher.shared.decipherN(url: url, network: network)
+                    if let decryptedURL = await Cipher.shared.decipherN(url: url, network: network) {
                         stream.url = decryptedURL.absoluteString
-                    } catch {
-                        print("⚠️ Failed to decipher 'n' parameter: \(error)")
                     }
+                    newFormats.append(stream)
                 }
-                newFormats.append(stream)
             }
             streamingData.formats = newFormats
-            
             video.streamingData = streamingData
         }
         return video
     }
+    */
+
 
 
     /// Fetches search suggestions for Main YouTube using an external suggest endpoint.
@@ -261,6 +557,31 @@ extension YouTubeClient {
             hl: normalizedLanguage
         )
         return NetworkClient(context: context)
+    }
+
+    private func browseHomeData(regionCode: String?, languageCode: String?) async throws -> Data {
+        let body = ["browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.home]
+        do {
+            return try await makeWebSearchNetwork(regionCode: regionCode, languageCode: languageCode).get("browse", body: body)
+        } catch {
+            let fallback = NetworkClient(
+                context: InnerTubeContext(client: ClientConfig.ios, cookies: cookies, accessToken: accessToken),
+                baseURL: YouTubeSDKConstants.URLS.API.googleapisInnerTubeURL
+            )
+            return try await fallback.get("browse", body: body)
+        }
+    }
+
+    private func browseData(body: [String: String]) async throws -> Data {
+        do {
+            return try await network.get("browse", body: body)
+        } catch {
+            let fallback = NetworkClient(
+                context: InnerTubeContext(client: ClientConfig.ios, cookies: cookies, accessToken: accessToken),
+                baseURL: YouTubeSDKConstants.URLS.API.googleapisInnerTubeURL
+            )
+            return try await fallback.get("browse", body: body)
+        }
     }
 
     nonisolated func shouldKeepMusicHomeItem(_ item: YouTubeItem) -> Bool {

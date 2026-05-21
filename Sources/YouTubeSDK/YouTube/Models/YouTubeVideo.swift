@@ -75,18 +75,26 @@ public struct YouTubeVideo: Decodable, Identifiable, Sendable {
         return URL(string: urlString)
     }
     
-    /// Returns the highest quality audio-only stream (m4a/opus).
+    /// Returns the best audio-only stream for AVPlayer.
+    /// Prefers AAC/MP4 (natively supported) over Opus/WebM (unsupported on iOS).
     public var bestAudioStream: Stream? {
-        return streamingData?.adaptiveFormats
-            .filter { $0.isAudioOnly }
-            .sorted { $0.bitrate > $1.bitrate } // Highest bitrate first
-            .first
+        guard let audioStreams = streamingData?.adaptiveFormats
+            .filter({ $0.isAudioOnly && $0.playbackUrl != nil }),
+              !audioStreams.isEmpty else { return nil }
+
+        // Prefer AAC (audio/mp4 — native iOS support) over Opus/WebM
+        let aac = audioStreams.filter { $0.mimeType.contains("mp4") }
+            .sorted { $0.bitrate > $1.bitrate }.first
+        if let aac { return aac }
+
+        return audioStreams.sorted { $0.bitrate > $1.bitrate }.first
     }
-    
+
     /// Returns the best muxed video (Video + Audio combined).
-    /// usually capped at 720p by YouTube, but easiest to play.
+    /// Usually capped at 720p by YouTube, but easy to play since it's a single stream.
     public var bestMuxedStream: Stream? {
         return streamingData?.formats
+            .filter { $0.playbackUrl != nil }
             .sorted { ($0.height ?? 0) > ($1.height ?? 0) }
             .first
     }
@@ -190,8 +198,9 @@ public extension YouTubeVideo {
 
 public extension YouTubeVideo {
     var requiresDeciphering: Bool {
-        // If we have no HLS and the best streams have no URL but have a cipher
         guard hlsURL == nil else { return false }
-        return streamingData?.adaptiveFormats.first?.url == nil && streamingData?.adaptiveFormats.first?.signatureCipher != nil
+        // Requires deciphering when there is a signatureCipher but no direct or proxy URL
+        return streamingData?.adaptiveFormats.first?.playbackUrl == nil &&
+               streamingData?.adaptiveFormats.first?.signatureCipher != nil
     }
 }

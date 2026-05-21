@@ -82,9 +82,14 @@ public actor NetworkClient {
     /// Sends a request like `sendComplexRequest` but injects `visitorData` into the
     /// nested `context.client.visitorData` path while preserving the rest of the
     /// generated `context` payload. This is required for certain player requests.
+    public struct SendableBody: @unchecked Sendable {
+        public let value: [String: Any]
+        public init(_ value: [String: Any]) { self.value = value }
+    }
+
     public func sendWithVisitorData(
         _ endpoint: String,
-        body: [String: Any] = [:],
+        body: SendableBody = SendableBody([:]),
         visitorData: String? = nil,
         queryItems: [URLQueryItem] = [],
         additionalHeaders: [String: String] = [:]
@@ -107,7 +112,7 @@ public actor NetworkClient {
         }
 
         // Merge caller-provided top-level fields (e.g., videoId)
-        for (key, value) in body {
+        for (key, value) in body.value {
             payload[key] = value
         }
 
@@ -125,7 +130,10 @@ public actor NetworkClient {
             request.setValue(value, forHTTPHeaderField: key)
         }
 
-        if let host = URL(string: baseURL)?.host {
+        // Origin/Referer are only needed for WEB client on www.youtube.com.
+        // iOS/Android player requests go to youtubei.googleapis.com and must NOT
+        // have these headers — SmartTubeIOS's postPlayer/postAndroid never set them.
+        if let host = URL(string: baseURL)?.host, host.contains("youtube.com") && !host.contains("googleapis") {
             let origin = "https://\(host)"
             request.setValue(origin, forHTTPHeaderField: "Origin")
             request.setValue("\(origin)/", forHTTPHeaderField: "Referer")
@@ -177,7 +185,8 @@ public actor NetworkClient {
             request.setValue(value, forHTTPHeaderField: key)
         }
 
-        if let host = URL(string: baseURL)?.host {
+        // Origin/Referer only for WEB client (www.youtube.com), not googleapis.
+        if let host = URL(string: baseURL)?.host, host.contains("youtube.com") && !host.contains("googleapis") {
             let origin = "https://\(host)"
             request.setValue(origin, forHTTPHeaderField: "Origin")
             request.setValue("\(origin)/", forHTTPHeaderField: "Referer")

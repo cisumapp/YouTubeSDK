@@ -17,15 +17,25 @@ public struct ClientConfig: Sendable {
     public let apiKey: String          // The Google API Key
     public let userAgent: String       // The User-Agent header string
     public let clientNameID: String    // The numeric ID used in some stats logs
+    public let androidSdkVersion: Int?
+    
+    public init(name: String, version: String, apiKey: String, userAgent: String, clientNameID: String, androidSdkVersion: Int? = nil) {
+        self.name = name
+        self.version = version
+        self.apiKey = apiKey
+        self.userAgent = userAgent
+        self.clientNameID = clientNameID
+        self.androidSdkVersion = androidSdkVersion
+    }
     
     // MARK: - The Golden List of Presets
     
     /// The Standard Web Client. Best for Charts and Public Data.
     public static let web = ClientConfig(
         name: "WEB",
-        version: "2.20240308.00.00",
-        apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8", // From zerodytrash (Web)
-        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        version: "2.20260206.01.00",
+        apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         clientNameID: "1"
     )
     
@@ -47,13 +57,24 @@ public struct ClientConfig: Sendable {
     )
     
     /// The standard iOS Client. Best for generic Video and Search.
-    public static let ios = ClientConfig(
-        name: "IOS",
-        version: "20.11.6",
-        apiKey: "AIzaSyB-63vPrdThhKuerbB2N_l7Kwwcxj6yUAc", // From zerodytrash
-        userAgent: "com.google.ios.youtube/20.11.6 (iPhone10,4; U; CPU iOS 16_7_7 like Mac OS X)",
-        clientNameID: "5"
-    )
+    /// Version and User-Agent match SmartTube's working config (21.02.3, iPhone16,2, dynamic OS).
+    public static var ios: ClientConfig {
+        ClientConfig(
+            name: "iOS",
+            version: "21.02.3",
+            apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+            userAgent: iosUserAgent,
+            clientNameID: "5"
+        )
+    }
+
+    private static var iosUserAgent: String {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        let osVer = v.patchVersion == 0
+            ? "\(v.majorVersion)_\(v.minorVersion)"
+            : "\(v.majorVersion)_\(v.minorVersion)_\(v.patchVersion)"
+        return "com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS \(osVer) like Mac OS X;)"
+    }
     
     /// The YouTube Music Native Client. Best for High-Quality Audio.
     public static let iosMusic = ClientConfig(
@@ -67,10 +88,11 @@ public struct ClientConfig: Sendable {
     /// The Android Client. Reliable backup for Video.
     public static let android = ClientConfig(
         name: "ANDROID",
-        version: "19.35.36",
-        apiKey: "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w", // From zerodytrash
-        userAgent: "com.google.android.youtube/19.35.36 (Linux; U; Android 13; en_US) gzip",
-        clientNameID: "3"
+        version: "21.02.35",
+        apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+        userAgent: "com.google.android.youtube/21.02.35 (Linux; U; Android 11) gzip",
+        clientNameID: "3",
+        androidSdkVersion: 30
     )
     
     /// The YouTube Music Native Client. Best for High-Quality Audio.
@@ -82,12 +104,43 @@ public struct ClientConfig: Sendable {
         clientNameID: "21"
     )
     
+    /// The Web Embedded Player Client. Returns all formats with signatureCipher (forces decipher challenge).
+    /// Based on demos youtube-nocookie.com / js-player requests.
+    /// Uses the same API key as WEB.
+    public static var webEmbedded: ClientConfig {
+        ClientConfig(
+            name: "WEB_EMBEDDED_PLAYER",
+            version: "2.20260519.01.00",
+            apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+            userAgent: webEmbeddedUserAgent,
+            clientNameID: "56"
+        )
+    }
+
+    private static var webEmbeddedUserAgent: String {
+        let v = ProcessInfo.processInfo.operatingSystemVersion
+        let osVer = v.patchVersion == 0
+            ? "\(v.majorVersion)_\(v.minorVersion)"
+            : "\(v.majorVersion)_\(v.minorVersion)_\(v.patchVersion)"
+        return "Mozilla/5.0 (iPhone; CPU iPhone OS \(osVer) like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/\(v.majorVersion).\(v.minorVersion) Mobile/15E148 Safari/604.1"
+    }
+
     /// The TV Client. Essential for the "Code" Authentication flow.
     public static let tv = ClientConfig(
         name: "TVHTML5",
-        version: "7.20250219.14.00",
-        apiKey: "AIzaSyBUPetSUmoZL-OhlxA7wSac5XinrygCqMo", // Generic Safe Key
+        version: "7.20260311.12.00",
+        apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
         userAgent: "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version",
         clientNameID: "7"
+    )
+
+    /// The Android VR (Oculus Quest) client. Does NOT require a PO token for adaptive audio.
+    /// Per yt-dlp research (May 2026), usable as fallback in audio-only mode.
+    public static let androidVR = ClientConfig(
+        name: "ANDROID_VR",
+        version: "1.65.10",
+        apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8",
+        userAgent: "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12; Build/SQ3A.220705.001.B1) gzip",
+        clientNameID: "28"
     )
 }

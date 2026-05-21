@@ -15,9 +15,8 @@ extension YouTubeMusicClient {
     }
 
     public func getHomePage(regionCode: String? = nil, languageCode: String? = nil) async throws -> YouTubeMusicHomePage {
-        let client = makeNetwork(regionCode: regionCode, languageCode: languageCode)
         let body = ["browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.home]
-        let data = try await client.get("browse", body: body)
+        let data = try await browseData(body: body, regionCode: regionCode, languageCode: languageCode)
         return parseHomePage(from: data)
     }
 
@@ -26,8 +25,7 @@ extension YouTubeMusicClient {
         regionCode: String? = nil,
         languageCode: String? = nil
     ) async throws -> YouTubeMusicHomePage {
-        let client = makeNetwork(regionCode: regionCode, languageCode: languageCode)
-        let data = try await client.get("browse", body: ["continuation": token])
+        let data = try await browseData(body: ["continuation": token], regionCode: regionCode, languageCode: languageCode)
         return parseHomePage(from: data)
     }
 
@@ -146,14 +144,9 @@ extension YouTubeMusicClient {
         languageCode: String? = nil,
         brandAccountID: String? = nil
     ) async throws -> YouTubeMusicLibraryLanding {
-        let client = makeNetwork(
-            regionCode: regionCode,
-            languageCode: languageCode,
-            brandAccountID: brandAccountID
-        )
-        let data = try await client.get("browse", body: [
+        let data = try await browseData(body: [
             "browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.libraryLanding
-        ])
+        ], regionCode: regionCode, languageCode: languageCode, brandAccountID: brandAccountID)
         return parseLibraryLanding(from: data)
     }
 
@@ -168,18 +161,12 @@ extension YouTubeMusicClient {
             throw YouTubeError.apiError(message: "Invalid library browseId")
         }
 
-        let client = makeNetwork(
-            regionCode: regionCode,
-            languageCode: languageCode,
-            brandAccountID: brandAccountID
-        )
-
         var body: [String: String] = ["browseId": normalizedBrowseID]
         if let params = normalizedToken(params) {
             body["params"] = params
         }
 
-        let data = try await client.get("browse", body: body)
+        let data = try await browseData(body: body, regionCode: regionCode, languageCode: languageCode, brandAccountID: brandAccountID)
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return []
         }
@@ -312,24 +299,50 @@ extension YouTubeMusicClient {
     private func makeNetwork(
         regionCode: String?,
         languageCode: String?,
-        brandAccountID: String? = nil
+        brandAccountID: String? = nil,
+        client: ClientConfig = .webRemix
     ) -> NetworkClient {
         let normalizedBrandAccountID = normalizedToken(brandAccountID)
         let normalizedRegion = normalizedRegionCode(regionCode)
 
         guard normalizedRegion != nil || normalizedBrandAccountID != nil else {
-            return network
+            if client.name == ClientConfig.webRemix.name {
+                return network
+            }
+            let context = InnerTubeContext(client: client, cookies: cookies, accessToken: accessToken)
+            return NetworkClient(context: context, baseURL: YouTubeSDKConstants.URLS.API.youtubeMusicInnerTubeURL)
         }
 
         let normalizedLanguage = normalizedLanguageCode(languageCode)
         let context = InnerTubeContext(
-            client: ClientConfig.webRemix,
+            client: client,
             cookies: cookies,
             gl: normalizedRegion ?? "US",
             hl: normalizedLanguage,
             onBehalfOfUser: normalizedBrandAccountID
         )
         return NetworkClient(context: context, baseURL: YouTubeSDKConstants.URLS.API.youtubeMusicInnerTubeURL)
+    }
+
+    private func browseData(
+        body: [String: String],
+        regionCode: String? = nil,
+        languageCode: String? = nil,
+        brandAccountID: String? = nil
+    ) async throws -> Data {
+        let primary = makeNetwork(regionCode: regionCode, languageCode: languageCode, brandAccountID: brandAccountID, client: .webRemix)
+        do {
+            return try await primary.get("browse", body: body)
+        } catch {
+            let fallbackClients: [ClientConfig] = [.androidMusic, .iosMusic]
+            for client in fallbackClients {
+                let fallback = makeNetwork(regionCode: regionCode, languageCode: languageCode, brandAccountID: brandAccountID, client: client)
+                if let data = try? await fallback.get("browse", body: body) {
+                    return data
+                }
+            }
+            throw error
+        }
     }
 
     private func normalizedRegionCode(_ rawRegionCode: String?) -> String? {

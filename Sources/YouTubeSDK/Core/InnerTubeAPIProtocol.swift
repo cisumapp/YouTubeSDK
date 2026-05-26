@@ -1,0 +1,86 @@
+import Foundation
+
+// MARK: - InnerTubeAPIProtocol
+//
+// The dependency interface for all four feed ViewModels (Home, Browse, Search,
+// Playlist).  Decouples ViewModels from the concrete InnerTubeAPI actor so
+// they can be injected with a mock in unit tests.
+//
+// All methods are declared `async` (matching how ViewModels call them).
+// A synchronous actor method satisfies an `async` protocol requirement in
+// Swift — the actor's isolation guarantees safe concurrent access.
+
+public protocol InnerTubeAPIProtocol: AnyObject, Sendable {
+
+    // MARK: Auth
+    func setAuthToken(_ token: String?) async
+    func setSAPISID(_ value: String?) async
+
+    // MARK: Home / browse
+    func fetchHome(continuationToken: String?) async throws -> InternalVideoGroup
+    func fetchHomeRows(continuationToken: String?) async throws -> [InternalVideoGroup]
+    func fetchSubscriptions(continuationToken: String?) async throws -> InternalVideoGroup
+    func fetchHistory(continuationToken: String?) async throws -> InternalVideoGroup
+    func fetchShorts() async throws -> InternalVideoGroup
+    func fetchShortsMore(continuationToken: String) async throws -> InternalVideoGroup
+    func fetchMusic() async throws -> InternalVideoGroup
+    func fetchGaming() async throws -> InternalVideoGroup
+    func fetchNews() async throws -> InternalVideoGroup
+    func fetchLive() async throws -> InternalVideoGroup
+    func fetchSports() async throws -> InternalVideoGroup
+
+    // MARK: Library
+    func fetchUserPlaylists() async throws -> [PlaylistInfo]
+    func fetchSubscribedChannels() async throws -> [Channel]
+
+    // MARK: Channel
+    func fetchChannelThumbnailURL(channelId: String) async throws -> URL?
+    func fetchChannel(channelId: String) async throws -> (channel: Channel, videos: InternalVideoGroup)
+    func fetchChannelInternalVideos(channelId: String, continuationToken: String?) async throws -> InternalVideoGroup
+
+    // MARK: Search
+    func search(query: String, continuationToken: String?, filter: SearchFilter) async throws -> InternalVideoGroup
+    func fetchSearchSuggestions(query: String) async throws -> [String]
+
+    // MARK: Playlist
+    func fetchPlaylistInternalVideos(playlistId: String, continuationToken: String?) async throws -> InternalVideoGroup
+
+    // MARK: Playlist editing
+    func addToWatchLater(videoId: String) async throws
+    func removeFromWatchLater(videoId: String) async throws
+    func sendFeedback(token: String) async throws
+}
+
+// MARK: - Default-parameter convenience wrappers
+
+public extension InnerTubeAPIProtocol {
+
+    /// Fetches the flat recommended home feed from the first page.
+    func fetchHome() async throws -> InternalVideoGroup {
+        try await fetchHome(continuationToken: nil)
+    }
+
+    /// Fetches the home-feed row shelves from the first page.
+    func fetchHomeRows() async throws -> [InternalVideoGroup] {
+        try await fetchHomeRows(continuationToken: nil)
+    }
+
+    /// Fetches the subscriptions feed from the first page.
+    func fetchSubscriptions() async throws -> InternalVideoGroup {
+        try await fetchSubscriptions(continuationToken: nil)
+    }
+
+    /// Fetches the watch history from the first page.
+    func fetchHistory() async throws -> InternalVideoGroup {
+        try await fetchHistory(continuationToken: nil)
+    }
+
+    /// Searches using default filter and no continuation.
+    func search(query: String) async throws -> InternalVideoGroup {
+        try await search(query: query, continuationToken: nil, filter: .default)
+    }
+}
+
+// MARK: - InnerTubeAPI conformance
+
+extension InnerTubeAPI: InnerTubeAPIProtocol {}

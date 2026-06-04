@@ -69,22 +69,22 @@ public enum OAuthError: Error, LocalizedError, Sendable {
 
     public var errorDescription: String? {
         switch self {
-        case .networkError(let error):
-            return "Network error: \(error.localizedDescription)"
+        case let .networkError(error):
+            "Network error: \(error.localizedDescription)"
         case .invalidResponse:
-            return "Invalid response from server"
+            "Invalid response from server"
         case .expiredCode:
-            return "The code has expired. Please try again."
-        case .slowDown(let interval):
-            return "Slow down. Retry after \(interval) seconds."
+            "The code has expired. Please try again."
+        case let .slowDown(interval):
+            "Slow down. Retry after \(interval) seconds."
         case .authorizationPending:
-            return "Authorization pending. Please complete sign-in on another device."
-        case .unknownError(let message):
-            return "Unknown error: \(message)"
+            "Authorization pending. Please complete sign-in on another device."
+        case let .unknownError(message):
+            "Unknown error: \(message)"
         case .invalidClient:
-            return "Invalid client credentials."
+            "Invalid client credentials."
         case .unauthorizedClient:
-            return "Unauthorized client."
+            "Unauthorized client."
         }
     }
 }
@@ -92,7 +92,6 @@ public enum OAuthError: Error, LocalizedError, Sendable {
 // MARK: - OAuth Device Flow
 
 public actor YouTubeOAuthDeviceFlow {
-
     // OAuth credentials (SmartTube's TV app — for testing)
     private static let clientId = "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com"
     private static let clientSecret = "SboVhoG9s0rNafixCSGGKXAT"
@@ -107,7 +106,7 @@ public actor YouTubeOAuthDeviceFlow {
         var components = URLComponents()
         components.queryItems = [
             URLQueryItem(name: "client_id", value: Self.clientId),
-            URLQueryItem(name: "scope", value: Self.scope)
+            URLQueryItem(name: "scope", value: Self.scope),
         ]
 
         var request = URLRequest(url: Self.deviceCodeUrl)
@@ -145,14 +144,14 @@ public actor YouTubeOAuthDeviceFlow {
             let result = try await requestToken(code: deviceCode, grantType: nil)
 
             switch result {
-            case .success(let token):
+            case let .success(token):
                 print("[YouTubeSDK] Authorization received — token expires at \(token.expiresAt)")
                 return token
 
             case .pending:
                 try await Task.sleep(nanoseconds: UInt64(interval) * 1_000_000_000)
 
-            case .slowDown(let newInterval):
+            case let .slowDown(newInterval):
                 print("[YouTubeSDK] Slow down — waiting \(newInterval)s")
                 try await Task.sleep(nanoseconds: UInt64(newInterval) * 1_000_000_000)
             }
@@ -173,10 +172,10 @@ public actor YouTubeOAuthDeviceFlow {
         var components = URLComponents()
         var queryItems = [
             URLQueryItem(name: "client_id", value: Self.clientId),
-            URLQueryItem(name: "client_secret", value: Self.clientSecret)
+            URLQueryItem(name: "client_secret", value: Self.clientSecret),
         ]
 
-        if let grantType = grantType {
+        if let grantType {
             queryItems.append(URLQueryItem(name: "grant_type", value: grantType))
             queryItems.append(URLQueryItem(name: "refresh_token", value: code))
         } else {
@@ -199,7 +198,8 @@ public actor YouTubeOAuthDeviceFlow {
 
         guard httpResponse.statusCode == 200 else {
             if let errorJson = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let error = errorJson["error"] as? String {
+               let error = errorJson["error"] as? String
+            {
                 switch error {
                 case "authorization_pending":
                     return .pending
@@ -223,7 +223,7 @@ public actor YouTubeOAuthDeviceFlow {
             throw OAuthError.invalidResponse
         }
 
-        return .success(try tokenResponse.toOAuthToken(fallbackRefreshToken: fallbackRefreshToken))
+        return try .success(tokenResponse.toOAuthToken(fallbackRefreshToken: fallbackRefreshToken))
     }
 
     // MARK: - Token Refresh
@@ -234,7 +234,7 @@ public actor YouTubeOAuthDeviceFlow {
         let result = try await requestToken(code: refreshToken, grantType: "refresh_token", fallbackRefreshToken: refreshToken)
 
         switch result {
-        case .success(let token):
+        case let .success(token):
             print("[YouTubeSDK] Token refreshed successfully")
             return token
         default:
@@ -256,7 +256,8 @@ public actor YouTubeOAuthDeviceFlow {
             if httpResponse.statusCode == 200 {
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let audience = json["aud"] as? String,
-                   audience == Self.clientId {
+                   audience == Self.clientId
+                {
                     return true
                 }
             }

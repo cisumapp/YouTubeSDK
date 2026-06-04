@@ -10,11 +10,10 @@ import Foundation
 /// The simplified networking engine.
 /// It takes the Context we built and sends it to the URLs we defined.
 public actor NetworkClient {
-    
     private let context: InnerTubeContext
     private let session: URLSession
     private let baseURL: String
-    
+
     /// - Parameters:
     /// - baseURL: The host URL (e.g., "https://music.youtube.com/youtubei")
     /// - easier usage: `YouTubeSDKConstants.URLS.API.<api you want to use>`
@@ -23,7 +22,7 @@ public actor NetworkClient {
         self.session = session
         self.baseURL = baseURL
     }
-    
+
     /// Sends a request to YouTube.
     /// - Parameters:
     ///   - endpoint: The API path (e.g., "/v1/player")
@@ -35,7 +34,7 @@ public actor NetworkClient {
         let decoder = JSONDecoder()
         return try decoder.decode(T.self, from: data)
     }
-    
+
     /// Sends a request and returns the Raw Data (no decoding).
     /// Useful for complex endpoints where we need to inspect the JSON before decoding.
     public func get(_ endpoint: String, body: [String: String] = [:]) async throws -> Data {
@@ -50,20 +49,20 @@ public actor NetworkClient {
         guard let url = URL(string: urlString) else { throw URLError(.badURL) }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
-        
+
         // Use the context headers (User-Agent is critical)
         for (key, value) in context.headers {
             request.setValue(value, forHTTPHeaderField: key)
         }
-        
+
         let (data, response) = try await session.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
         return data
     }
-    
-    // Overload for complex bodies (needed for Charts & Analytics)
+
+    /// Overload for complex bodies (needed for Charts & Analytics)
     /// Sends a request with a complex nested body (required for Like, Subscribe, etc.)
     public func sendComplexRequest(
         _ endpoint: String,
@@ -71,7 +70,7 @@ public actor NetworkClient {
         queryItems: [URLQueryItem] = [],
         additionalHeaders: [String: String] = [:]
     ) async throws -> Data {
-        return try await sendRawRequest(
+        try await sendRawRequest(
             endpoint,
             body: body,
             queryItems: queryItems,
@@ -84,7 +83,9 @@ public actor NetworkClient {
     /// generated `context` payload. This is required for certain player requests.
     public struct SendableBody: @unchecked Sendable {
         public let value: [String: Any]
-        public init(_ value: [String: Any]) { self.value = value }
+        public init(_ value: [String: Any]) {
+            self.value = value
+        }
     }
 
     public func sendWithVisitorData(
@@ -133,7 +134,7 @@ public actor NetworkClient {
         // Origin/Referer are only needed for WEB client on www.youtube.com.
         // iOS/Android player requests go to youtubei.googleapis.com and must NOT
         // have these headers — SmartTubeIOS's postPlayer/postAndroid never set them.
-        if let host = URL(string: baseURL)?.host, host.contains("youtube.com") && !host.contains("googleapis") {
+        if let host = URL(string: baseURL)?.host, host.contains("youtube.com"), !host.contains("googleapis") {
             let origin = "https://\(host)"
             request.setValue(origin, forHTTPHeaderField: "Origin")
             request.setValue("\(origin)/", forHTTPHeaderField: "Referer")
@@ -151,7 +152,8 @@ public actor NetworkClient {
         if httpResponse.statusCode != 200 {
             YouTubeDebugLogger.log("Request to \(url.path) failed with status \(httpResponse.statusCode)")
             if let requestBody = request.httpBody,
-               let requestBodyString = String(data: requestBody, encoding: .utf8) {
+               let requestBodyString = String(data: requestBody, encoding: .utf8)
+            {
                 print("❌ YouTube Request URL: \(url.absoluteString)")
                 print("❌ YouTube Request Body: \(requestBodyString)")
             }
@@ -186,7 +188,7 @@ public actor NetworkClient {
         }
 
         // Origin/Referer only for WEB client (www.youtube.com), not googleapis.
-        if let host = URL(string: baseURL)?.host, host.contains("youtube.com") && !host.contains("googleapis") {
+        if let host = URL(string: baseURL)?.host, host.contains("youtube.com"), !host.contains("googleapis") {
             let origin = "https://\(host)"
             request.setValue(origin, forHTTPHeaderField: "Origin")
             request.setValue("\(origin)/", forHTTPHeaderField: "Referer")
@@ -209,7 +211,8 @@ public actor NetworkClient {
         if httpResponse.statusCode != 200 {
             YouTubeDebugLogger.log("Request to \(url.path) failed with status \(httpResponse.statusCode)")
             if let requestBody = request.httpBody,
-               let requestBodyString = String(data: requestBody, encoding: .utf8) {
+               let requestBodyString = String(data: requestBody, encoding: .utf8)
+            {
                 print("❌ YouTube Request URL: \(url.absoluteString)")
                 print("❌ YouTube Request Body: \(requestBodyString)")
             }
@@ -234,7 +237,7 @@ public actor NetworkClient {
             }
             queryItems.append(contentsOf: additionalQueryItems)
             components?.queryItems = queryItems
-            
+
             guard let finalURL = components?.url else { throw URLError(.badURL) }
             return finalURL
         }
@@ -244,13 +247,12 @@ public actor NetworkClient {
         }
 
         let trimmed = endpoint.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let endpointPath: String
-        if trimmed.isEmpty {
-            endpointPath = "v1"
+        let endpointPath: String = if trimmed.isEmpty {
+            "v1"
         } else if trimmed == "v1" || trimmed.hasPrefix("v1/") {
-            endpointPath = trimmed
+            trimmed
         } else {
-            endpointPath = "v1/\(trimmed)"
+            "v1/\(trimmed)"
         }
 
         var components = URLComponents(url: rootURL.appendingPathComponent(endpointPath), resolvingAgainstBaseURL: true)

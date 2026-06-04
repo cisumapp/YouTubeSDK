@@ -12,13 +12,13 @@ public enum YouTubeMusicItem: Identifiable, Sendable {
     case album(YouTubeMusicAlbum)
     case artist(YouTubeMusicArtist)
     case playlist(YouTubeMusicPlaylist)
-    
+
     public var id: String {
         switch self {
-        case .song(let s): return s.id
-        case .album(let a): return a.id
-        case .artist(let a): return a.id
-        case .playlist(let p): return p.id
+        case let .song(s): s.id
+        case let .album(a): a.id
+        case let .artist(a): a.id
+        case let .playlist(p): p.id
         }
     }
 }

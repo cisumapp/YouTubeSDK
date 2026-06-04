@@ -6,7 +6,10 @@ import Observation
 /// A record representing a video that has been downloaded to the device's local storage.
 /// Persisted in `Documents/SmartTubeDownloads/manifest.json`.
 public struct DownloadedInternalVideo: Codable, Sendable, Identifiable {
-    public var id: String { videoId }
+    public var id: String {
+        videoId
+    }
+
     public let videoId: String
     public let title: String
     public let channelTitle: String
@@ -111,7 +114,8 @@ public final class DownloadStore {
 
     private func loadManifest() {
         guard let data = try? Data(contentsOf: manifestURL),
-              let decoded = try? JSONDecoder().decode([DownloadedInternalVideo].self, from: data) else {
+              let decoded = try? JSONDecoder().decode([DownloadedInternalVideo].self, from: data)
+        else {
             return
         }
         // Drop entries whose files were deleted outside the app.

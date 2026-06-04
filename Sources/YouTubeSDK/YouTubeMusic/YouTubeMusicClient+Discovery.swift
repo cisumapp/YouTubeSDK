@@ -7,20 +7,19 @@
 
 import Foundation
 
-extension YouTubeMusicClient {
-    
-    public func getHome() async throws -> [YouTubeMusicSection] {
+public extension YouTubeMusicClient {
+    func getHome() async throws -> [YouTubeMusicSection] {
         let page = try await getHomePage()
         return page.sections
     }
 
-    public func getHomePage(regionCode: String? = nil, languageCode: String? = nil) async throws -> YouTubeMusicHomePage {
+    func getHomePage(regionCode: String? = nil, languageCode: String? = nil) async throws -> YouTubeMusicHomePage {
         let body = ["browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.home]
         let data = try await browseData(body: body, regionCode: regionCode, languageCode: languageCode)
         return parseHomePage(from: data)
     }
 
-    public func getHomeContinuation(
+    func getHomeContinuation(
         token: String,
         regionCode: String? = nil,
         languageCode: String? = nil
@@ -29,7 +28,7 @@ extension YouTubeMusicClient {
         return parseHomePage(from: data)
     }
 
-    public func getRecommendedSongs(
+    func getRecommendedSongs(
         limit: Int = 25,
         regionCode: String? = nil,
         languageCode: String? = nil
@@ -45,7 +44,8 @@ extension YouTubeMusicClient {
         var visitedTokens = Set<String>()
         while collectedSongs.count < cappedLimit,
               let continuationToken = page.continuationToken,
-              visitedTokens.insert(continuationToken).inserted {
+              visitedTokens.insert(continuationToken).inserted
+        {
             page = try await getHomeContinuation(
                 token: continuationToken,
                 regionCode: regionCode,
@@ -57,7 +57,7 @@ extension YouTubeMusicClient {
         return Array(collectedSongs.prefix(cappedLimit))
     }
 
-    public func getSong(
+    func getSong(
         videoId: String,
         playlistId: String? = nil,
         regionCode: String? = nil,
@@ -77,7 +77,7 @@ extension YouTubeMusicClient {
         return parseSongMetadata(from: data, fallbackVideoID: normalizedVideoId)
     }
 
-    public func getRadio(
+    func getRadio(
         videoId: String,
         playlistId: String? = nil,
         regionCode: String? = nil,
@@ -88,17 +88,16 @@ extension YouTubeMusicClient {
         }
 
         let trimmedPlaylistId = playlistId?.trimmingCharacters(in: .whitespacesAndNewlines)
-        let resolvedPlaylistId: String
-        if let trimmedPlaylistId, !trimmedPlaylistId.isEmpty {
-            resolvedPlaylistId = trimmedPlaylistId
+        let resolvedPlaylistId: String = if let trimmedPlaylistId, !trimmedPlaylistId.isEmpty {
+            trimmedPlaylistId
         } else {
-            resolvedPlaylistId = "RDAMVM\(normalizedVideoId)"
+            "RDAMVM\(normalizedVideoId)"
         }
 
         let client = makeNetwork(regionCode: regionCode, languageCode: languageCode)
         let data = try await client.get("next", body: [
             "videoId": normalizedVideoId,
-            "playlistId": resolvedPlaylistId
+            "playlistId": resolvedPlaylistId,
         ])
 
         let parsed = parseRadioQueue(from: data)
@@ -113,7 +112,7 @@ extension YouTubeMusicClient {
         return parsed
     }
 
-    public func getRadioContinuation(
+    func getRadioContinuation(
         token: String,
         regionCode: String? = nil,
         languageCode: String? = nil
@@ -127,7 +126,7 @@ extension YouTubeMusicClient {
         return parseRadioQueue(from: data)
     }
 
-    public func getQueue(playlistId: String, regionCode: String? = nil, languageCode: String? = nil) async throws -> [YouTubeMusicSong] {
+    func getQueue(playlistId: String, regionCode: String? = nil, languageCode: String? = nil) async throws -> [YouTubeMusicSong] {
         guard let normalizedPlaylistId = normalizedToken(playlistId) else {
             throw YouTubeError.apiError(message: "Invalid playlistId")
         }
@@ -139,18 +138,18 @@ extension YouTubeMusicClient {
 
     // MARK: - Library Coverage
 
-    public func getLibraryLanding(
+    func getLibraryLanding(
         regionCode: String? = nil,
         languageCode: String? = nil,
         brandAccountID: String? = nil
     ) async throws -> YouTubeMusicLibraryLanding {
         let data = try await browseData(body: [
-            "browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.libraryLanding
+            "browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.libraryLanding,
         ], regionCode: regionCode, languageCode: languageCode, brandAccountID: brandAccountID)
         return parseLibraryLanding(from: data)
     }
 
-    public func getLibraryFilterContent(
+    func getLibraryFilterContent(
         browseId: String,
         params: String? = nil,
         regionCode: String? = nil,
@@ -173,7 +172,7 @@ extension YouTubeMusicClient {
         return parseSections(from: json)
     }
 
-    public func getLibraryPlaylists(
+    func getLibraryPlaylists(
         regionCode: String? = nil,
         languageCode: String? = nil,
         brandAccountID: String? = nil
@@ -186,7 +185,7 @@ extension YouTubeMusicClient {
         )
     }
 
-    public func getLibraryArtists(
+    func getLibraryArtists(
         regionCode: String? = nil,
         languageCode: String? = nil,
         brandAccountID: String? = nil,
@@ -204,7 +203,7 @@ extension YouTubeMusicClient {
         )
     }
 
-    public func getLibraryAlbums(
+    func getLibraryAlbums(
         params: String? = nil,
         regionCode: String? = nil,
         languageCode: String? = nil,
@@ -219,7 +218,7 @@ extension YouTubeMusicClient {
         )
     }
 
-    public func getLibrarySongs(
+    func getLibrarySongs(
         params: String? = nil,
         regionCode: String? = nil,
         languageCode: String? = nil,
@@ -236,7 +235,7 @@ extension YouTubeMusicClient {
 
     // MARK: - Account Coverage
 
-    public func getAccountsList(
+    func getAccountsList(
         regionCode: String? = nil,
         languageCode: String? = nil
     ) async throws -> YouTubeMusicAccountsList {
@@ -245,29 +244,29 @@ extension YouTubeMusicClient {
         return parseAccountsList(from: data)
     }
 
-    public func getBrandAccounts(
+    func getBrandAccounts(
         regionCode: String? = nil,
         languageCode: String? = nil
     ) async throws -> [YouTubeMusicBrandAccount] {
         let accountList = try await getAccountsList(regionCode: regionCode, languageCode: languageCode)
         return accountList.accounts
     }
-    
-    public func getCharts() async throws -> [YouTubeMusicSection] {
-        return try await browseSection(browseId: YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.charts)
+
+    func getCharts() async throws -> [YouTubeMusicSection] {
+        try await browseSection(browseId: YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.charts)
     }
-    
-    public func getNewReleases() async throws -> [YouTubeMusicSection] {
-        return try await browseSection(browseId: YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.newReleases)
+
+    func getNewReleases() async throws -> [YouTubeMusicSection] {
+        try await browseSection(browseId: YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.newReleases)
     }
-    
-    public func getMoods() async throws -> [YouTubeMusicSection] {
-        return try await browseSection(browseId: YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.moods)
+
+    func getMoods() async throws -> [YouTubeMusicSection] {
+        try await browseSection(browseId: YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.moods)
     }
-    
+
     // MARK: - User Library
-        
-    public func getLikedSongs() async throws -> [YouTubeMusicSong] {
+
+    func getLikedSongs() async throws -> [YouTubeMusicSong] {
         let primaryData = try await network.get("browse", body: ["browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.likedMusic])
         let primaryResults = parseMusicItems(from: primaryData)
         if !primaryResults.isEmpty {
@@ -277,18 +276,18 @@ extension YouTubeMusicClient {
         let fallbackData = try await network.get("browse", body: ["browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.likedVideos])
         return parseMusicItems(from: fallbackData)
     }
-    
-    public func getHistory() async throws -> [YouTubeMusicSong] {
+
+    func getHistory() async throws -> [YouTubeMusicSong] {
         let data = try await network.get("browse", body: ["browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.history])
         return parseMusicItems(from: data)
     }
-    
-    public func getLibrary() async throws -> [YouTubeMusicSection] {
+
+    func getLibrary() async throws -> [YouTubeMusicSection] {
         let data = try await network.get("browse", body: ["browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.library])
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
         return parseSections(from: json)
     }
-    
+
     private func browseSection(browseId: String) async throws -> [YouTubeMusicSection] {
         let body = ["browseId": browseId]
         let data = try await network.get("browse", body: body)
@@ -377,16 +376,19 @@ extension YouTubeMusicClient {
     private func normalizedVideoID(_ rawVideoID: String) -> String? {
         let trimmed = rawVideoID.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
+        // Validate YouTube video ID: exactly 11 chars of [A-Za-z0-9_-]
+        guard trimmed.count == 11 else { return nil }
+        let validChars = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        guard trimmed.unicodeScalars.allSatisfy({ validChars.contains($0) }) else { return nil }
         return trimmed
     }
 
     private func extractUniqueSongs(from items: [YouTubeMusicItem], seenVideoIDs: inout Set<String>) -> [YouTubeMusicSong] {
         let songs = items.compactMap { item -> YouTubeMusicSong? in
-            guard case .song(let song) = item else { return nil }
+            guard case let .song(song) = item else { return nil }
             return song
         }
-        
-        let unique = songs.filter { seenVideoIDs.insert($0.videoId).inserted }
-        return unique
+
+        return songs.filter { seenVideoIDs.insert($0.videoId).inserted }
     }
 }

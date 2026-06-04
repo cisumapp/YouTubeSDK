@@ -16,7 +16,6 @@ import Foundation
 /// - `vnd.youtube://VIDEO_ID`
 /// - `vnd.youtube:VIDEO_ID`
 public enum YouTubeLinkHandler {
-
     /// Returns the video ID embedded in `url`, or `nil` if it cannot be extracted.
     public static func videoID(from url: URL) -> String? {
         let scheme = url.scheme?.lowercased() ?? ""
@@ -30,7 +29,8 @@ public enum YouTubeLinkHandler {
         guard scheme == "https" || scheme == "http" else { return nil }
         guard let host = url.host?.lowercased() else { return nil }
         guard host == "youtube.com" || host == "www.youtube.com" || host == "m.youtube.com"
-                || host == "youtu.be" || host == "music.youtube.com" else {
+            || host == "youtu.be" || host == "music.youtube.com"
+        else {
             return nil
         }
 
@@ -74,7 +74,7 @@ public enum YouTubeLinkHandler {
         }
         // youtube://VIDEO_ID  or  vnd.youtube://VIDEO_ID  (host is the video ID)
         let host = url.host ?? ""
-        if !host.isEmpty && host.lowercased() != "watch" {
+        if !host.isEmpty, host.lowercased() != "watch" {
             return validID(host)
         }
         // vnd.youtube:VIDEO_ID (opaque URL — no authority component)

@@ -7,18 +7,18 @@
 
 import Foundation
 
-public struct YouTubeSDKConstants {
-    public struct URLS {
+public enum YouTubeSDKConstants {
+    public enum URLS {
         public static let googleSearchBaseURL = "https://www.google.com"
         public static let youtubeBaseURL = "https://www.youtube.com"
         public static let youtubeMusicBaseURL = "https://music.youtube.com"
         public static let youtubeSuggestions = "https://suggestqueries-clients6.youtube.com"
         public static let youtubeUpload = "https://upload.youtube.com"
-        
-        public struct API {
+
+        public enum API {
             /// Generic Base URL
             public static let baseURL = "https://youtubei.googleapis.com"
-            
+
             /// Generic Production URLs
             public static let youtubeInnerTubeURL = "https://www.youtube.com/youtubei"
             public static let youtubeMusicInnerTubeURL = "https://music.youtube.com/youtubei"
@@ -26,7 +26,7 @@ public struct YouTubeSDKConstants {
 
             /// Suggestions URLs
             public static let youtubeSuggestionsURL = "https://suggestqueries-clients6.youtube.com/complete"
-            
+
             /// Random InnerTube API URLs
             public static let googleapisInnerTubeURL = "https://youtubei.googleapis.com/youtubei"
             public static let stagingURL = "https://green-youtubei.sandbox.googleapis.com/youtubei"
@@ -36,9 +36,9 @@ public struct YouTubeSDKConstants {
             public static let uytfeURL = "https://uytfe.sandbox.googleapis.com/youtubei"
         }
     }
-    
-    public struct InternalKeys {
-        public struct Renderers {
+
+    public enum InternalKeys {
+        public enum Renderers {
             public static let video = "videoRenderer"
             public static let gridVideo = "gridVideoRenderer"
             public static let compactVideo = "compactVideoRenderer"
@@ -55,14 +55,14 @@ public struct YouTubeSDKConstants {
             public static let musicShelf = "musicShelfRenderer"
             public static let musicCarouselShelf = "musicCarouselShelfRenderer"
         }
-        
-        public struct BrowseIDs {
+
+        public enum BrowseIDs {
             // Main YouTube
             public static let home = "FEwhat_to_watch"
             public static let trending = "FEtrending"
-            
-            // YouTube Music
-            public struct Music {
+
+            /// YouTube Music
+            public enum Music {
                 public static let home = "FEmusic_home"
                 public static let explore = "FEmusic_explore"
                 public static let charts = "FEmusic_charts"

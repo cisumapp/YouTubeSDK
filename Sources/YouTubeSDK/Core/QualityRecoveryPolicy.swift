@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - Quality Recovery Policy
+
 //
 // Pure classification logic extracted from PlaybackQualityManager.reloadHLSItem
 // (task #141, SRP-2). No AVFoundation import needed — error domains are string constants.
@@ -44,6 +45,6 @@ public func qualityRecoveryAction(
     let isH264DecodeError = error.domain == avFoundationErrorDomain && error.code == -11833
     if is403 { return .retry403Recovery }
     if quality != .auto { return .revertToAuto }
-    if !hasAppliedH264Cap && isH264DecodeError { return .retryWithH264Cap }
+    if !hasAppliedH264Cap, isH264DecodeError { return .retryWithH264Cap }
     return .fail(error: error)
 }

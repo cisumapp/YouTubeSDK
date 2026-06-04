@@ -5,13 +5,12 @@ private let tubeLog = Logger(subsystem: appSubsystem, category: "InnerTube")
 
 // MARK: - Social interaction endpoints (like/dislike, next, comments)
 
-extension InnerTubeAPI {
-
+public extension InnerTubeAPI {
     // MARK: - Like / Dislike
 
     /// Sends a like for the given video (requires authentication).
     /// Mirrors Android's `LikeDislikePresenter` → `PostInternalVideoAction.LIKE`.
-    public func like(videoId: String) async throws {
+    func like(videoId: String) async throws {
         var body = makeBody(client: tvClientContext)
         body["target"] = ["videoId": videoId]
         _ = try await postTV(endpoint: "like/like", body: body)
@@ -19,7 +18,7 @@ extension InnerTubeAPI {
 
     /// Sends a dislike for the given video (requires authentication).
     /// Mirrors Android's `LikeDislikePresenter` → `PostInternalVideoAction.DISLIKE`.
-    public func dislike(videoId: String) async throws {
+    func dislike(videoId: String) async throws {
         var body = makeBody(client: tvClientContext)
         body["target"] = ["videoId": videoId]
         _ = try await postTV(endpoint: "like/dislike", body: body)
@@ -27,7 +26,7 @@ extension InnerTubeAPI {
 
     /// Removes any existing like or dislike for the given video (requires authentication).
     /// Mirrors Android's `LikeDislikePresenter` → `PostInternalVideoAction.REMOVE_LIKE`.
-    public func removeLike(videoId: String) async throws {
+    func removeLike(videoId: String) async throws {
         var body = makeBody(client: tvClientContext)
         body["target"] = ["videoId": videoId]
         _ = try await postTV(endpoint: "like/removelike", body: body)
@@ -37,7 +36,7 @@ extension InnerTubeAPI {
     /// Uses the TVHTML5 client's `browse_edit_playlist` endpoint with ACTION_ADD_VIDEO,
     /// mirroring the Android SmartTube `PlaylistPresenter` → `ACTION_ADD_VIDEO` flow.
     /// Requires authentication.
-    public func addToWatchLater(videoId: String) async throws {
+    func addToWatchLater(videoId: String) async throws {
         var body = makeBody(client: tvClientContext)
         body["playlistId"] = "WL"
         body["actions"] = [["addedInternalVideoId": videoId, "action": "ACTION_ADD_VIDEO"]]
@@ -48,7 +47,7 @@ extension InnerTubeAPI {
     /// Removes a video from the authenticated user's Watch Later playlist (id \"WL\").
     /// Mirrors `addToWatchLater` but uses `ACTION_REMOVE_VIDEO` + `removedInternalVideoId`.
     /// Requires authentication.
-    public func removeFromWatchLater(videoId: String) async throws {
+    func removeFromWatchLater(videoId: String) async throws {
         var body = makeBody(client: tvClientContext)
         body["playlistId"] = "WL"
         body["actions"] = [["removedInternalVideoId": videoId, "action": "ACTION_REMOVE_VIDEO"]]
@@ -61,7 +60,7 @@ extension InnerTubeAPI {
     /// all three actions share this endpoint and differ only in their `feedbackToken`.
     /// Tokens are parsed from `videoRenderer.menu.menuRenderer.items` in the feed response.
     /// Requires authentication.
-    public func sendFeedback(token: String) async throws {
+    func sendFeedback(token: String) async throws {
         var body = makeBody(client: tvClientContext)
         body["feedbackTokens"] = [token]
         _ = try await postTV(endpoint: "feedback", body: body)
@@ -75,7 +74,7 @@ extension InnerTubeAPI {
     /// token is accepted and the response includes the user's current like state.
     /// Without auth, falls back to the WEB client (like status will be .none).
     /// Mirrors Android's SuggestionsController + LikeDislikePresenter.
-    public func fetchNextInfo(videoId: String) async throws -> NextInfo {
+    func fetchNextInfo(videoId: String) async throws -> NextInfo {
         let isAuth = authToken != nil
         var tvBody = makeBody(client: isAuth ? tvClientContext : webClientContext)
         tvBody["videoId"] = videoId
@@ -87,16 +86,16 @@ extension InnerTubeAPI {
             // (async let cannot be used here: [String:Any] is not Sendable in Swift 6.)
             var webBody = makeBody(client: webClientContext)
             webBody["videoId"] = videoId
-            let tvData  = try await postTV(endpoint: "next", body: tvBody)
+            let tvData = try await postTV(endpoint: "next", body: tvBody)
             let webData = try await post(endpoint: "next", body: webBody)
-            let videos   = parseRelatedInternalVideos(from: tvData)
-            let status   = parseLikeStatus(from: tvData)
+            let videos = parseRelatedInternalVideos(from: tvData)
+            let status = parseLikeStatus(from: tvData)
             let chapters = parseChapters(from: webData)
             tubeLog.notice("fetchNextInfo (auth) → related=\(videos.count, privacy: .public) chapters=\(chapters.count, privacy: .public)")
             return NextInfo(relatedInternalVideos: videos, likeStatus: status, chapters: chapters)
         } else {
-            let data     = try await post(endpoint: "next", body: tvBody)
-            let videos   = parseRelatedInternalVideos(from: data)
+            let data = try await post(endpoint: "next", body: tvBody)
+            let videos = parseRelatedInternalVideos(from: data)
             let chapters = parseChapters(from: data)
             tubeLog.notice("fetchNextInfo (anon) → related=\(videos.count, privacy: .public) chapters=\(chapters.count, privacy: .public)")
             return NextInfo(relatedInternalVideos: videos, likeStatus: .none, chapters: chapters)
@@ -109,7 +108,7 @@ extension InnerTubeAPI {
     /// Uses the WEB client: calls `/next` with the videoId to extract the
     /// comments continuation token from `engagementPanels`, then fetches comments.
     /// Returns an empty array when comments are disabled or the token is absent.
-    public func fetchComments(videoId: String) async throws -> [Comment] {
+    func fetchComments(videoId: String) async throws -> [Comment] {
         var body = makeBody(client: webClientContext)
         body["videoId"] = videoId
         let nextData = try await post(endpoint: "next", body: body)
@@ -140,9 +139,9 @@ extension InnerTubeAPI {
                 // Strategy 1: direct likeStatus string (videoPrimaryInfoRenderer on WEB)
                 if let statusStr = dict["likeStatus"] as? String {
                     switch statusStr {
-                    case "LIKE":    found = .like
+                    case "LIKE": found = .like
                     case "DISLIKE": found = .dislike
-                    default:        found = LikeStatus.none
+                    default: found = LikeStatus.none
                     }
                     return
                 }
@@ -157,9 +156,13 @@ extension InnerTubeAPI {
                     found = liked ? .like : disliked ? .dislike : LikeStatus.none
                     return
                 }
-                for value in dict.values { walk(value, depth: depth + 1) }
+                for value in dict.values {
+                    walk(value, depth: depth + 1)
+                }
             } else if let arr = obj as? [Any] {
-                for item in arr { walk(item, depth: depth + 1) }
+                for item in arr {
+                    walk(item, depth: depth + 1)
+                }
             }
         }
         walk(json)
@@ -175,13 +178,18 @@ extension InnerTubeAPI {
             guard depth < 50 else { return }
             if let dict = obj as? [String: Any] {
                 if let r = dict["compactInternalVideoRenderer"] as? [String: Any],
-                   let v = parseInternalVideoRenderer(r) {
+                   let v = parseInternalVideoRenderer(r)
+                {
                     videos.append(v)
                 } else {
-                    for value in dict.values { walk(value, depth: depth + 1) }
+                    for value in dict.values {
+                        walk(value, depth: depth + 1)
+                    }
                 }
             } else if let arr = obj as? [Any] {
-                for item in arr { walk(item, depth: depth + 1) }
+                for item in arr {
+                    walk(item, depth: depth + 1)
+                }
             }
         }
         walk(json)
@@ -205,9 +213,10 @@ extension InnerTubeAPI {
                     // how JSONSerialization bridges the JSON number — handle all three.
                     let startTime: TimeInterval? = {
                         if let watchEndpoint = (renderer["onTap"] as? [String: Any])
-                            .flatMap({ $0["watchEndpoint"] as? [String: Any] }) {
+                            .flatMap({ $0["watchEndpoint"] as? [String: Any] })
+                        {
                             let raw = watchEndpoint["startTimeSeconds"]
-                            if let n = raw as? Int    { return TimeInterval(n) }
+                            if let n = raw as? Int { return TimeInterval(n) }
                             if let n = raw as? Double { return n }
                             if let n = raw as? NSNumber { return n.doubleValue }
                             if let s = raw as? String { return TimeInterval(s) }
@@ -222,9 +231,13 @@ extension InnerTubeAPI {
                     }
                     return
                 }
-                for value in dict.values { walk(value, depth: depth + 1) }
+                for value in dict.values {
+                    walk(value, depth: depth + 1)
+                }
             } else if let arr = obj as? [Any] {
-                for item in arr { walk(item, depth: depth + 1) }
+                for item in arr {
+                    walk(item, depth: depth + 1)
+                }
             }
         }
         walk(json)
@@ -255,13 +268,18 @@ extension InnerTubeAPI {
                     if let contItem = dict["continuationItemRenderer"] as? [String: Any],
                        let endpoint = contItem["continuationEndpoint"] as? [String: Any],
                        let cmd = endpoint["continuationCommand"] as? [String: Any],
-                       let t = cmd["token"] as? String {
+                       let t = cmd["token"] as? String
+                    {
                         found = t
                         return
                     }
-                    for v in dict.values { findToken(v, depth: depth + 1) }
+                    for v in dict.values {
+                        findToken(v, depth: depth + 1)
+                    }
                 } else if let arr = obj as? [Any] {
-                    for item in arr { findToken(item, depth: depth + 1) }
+                    for item in arr {
+                        findToken(item, depth: depth + 1)
+                    }
                 }
             }
             findToken(pslr["content"] as Any)
@@ -280,12 +298,13 @@ extension InnerTubeAPI {
         // key-references; the actual data is in entity mutations.
         if let frameworkUpdates = json["frameworkUpdates"] as? [String: Any],
            let entityBatch = frameworkUpdates["entityBatchUpdate"] as? [String: Any],
-           let mutations = entityBatch["mutations"] as? [[String: Any]] {
+           let mutations = entityBatch["mutations"] as? [[String: Any]]
+        {
             for mutation in mutations {
                 guard let payload = mutation["payload"] as? [String: Any],
                       let cep = payload["commentEntityPayload"] as? [String: Any] else { continue }
                 let properties = cep["properties"] as? [String: Any]
-                let author     = cep["author"] as? [String: Any]
+                let author = cep["author"] as? [String: Any]
 
                 let id = properties?["commentId"] as? String ?? UUID().uuidString
                 let authorName = author?["displayName"] as? String ?? ""
@@ -311,7 +330,7 @@ extension InnerTubeAPI {
             }
         }
 
-        // Legacy format: commentRenderer nested in the response tree.
+        /// Legacy format: commentRenderer nested in the response tree.
         func walk(_ obj: Any, depth: Int = 0) {
             guard depth < 50 else { return }
             if let dict = obj as? [String: Any] {
@@ -335,9 +354,13 @@ extension InnerTubeAPI {
                     ))
                     return
                 }
-                for v in dict.values { walk(v, depth: depth + 1) }
+                for v in dict.values {
+                    walk(v, depth: depth + 1)
+                }
             } else if let arr = obj as? [Any] {
-                for item in arr { walk(item, depth: depth + 1) }
+                for item in arr {
+                    walk(item, depth: depth + 1)
+                }
             }
         }
         walk(json)
@@ -351,6 +374,7 @@ extension InnerTubeAPI {
     }
 
     // MARK: - Private: parseInternalVideoRenderer passthrough
+
     // Social parsers (parseRelatedInternalVideos) call parseInternalVideoRenderer which lives in
     // InnerTubeAPI+InternalVideoRenderers.swift. Because both files declare extensions on the
     // same actor, Swift resolves the call correctly at compile time.

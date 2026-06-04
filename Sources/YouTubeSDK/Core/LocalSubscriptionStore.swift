@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - LocalSubscriptionStore
+
 //
 // Persists locally followed channels on-device in UserDefaults as JSON.
 // No authentication required — mirrors the InternalVideoStateStore pattern exactly.
@@ -10,7 +11,6 @@ import Foundation
 // On each RSS refresh, metadata (title, thumbnail) is updated via updateMetadata().
 
 public actor LocalSubscriptionStore: UserDefaultsBackedStore {
-
     // MARK: - Singleton
 
     public static let shared = LocalSubscriptionStore()
@@ -28,7 +28,7 @@ public actor LocalSubscriptionStore: UserDefaultsBackedStore {
 
     private init() {
         self.defaults = .standard
-        if let loaded = Self.loadFrom(.standard) { channels = loaded }
+        if let loaded = Self.loadFrom(.standard) { self.channels = loaded }
     }
 
     /// Designated initializer for unit testing.
@@ -36,7 +36,7 @@ public actor LocalSubscriptionStore: UserDefaultsBackedStore {
     /// shared UserDefaults state — mirrors InternalVideoStateStore(suiteName:).
     init(suiteName: String) {
         self.defaults = UserDefaults(suiteName: suiteName) ?? .standard
-        if let loaded = Self.loadFrom(self.defaults) { channels = loaded }
+        if let loaded = Self.loadFrom(defaults) { self.channels = loaded }
     }
 
     // MARK: - Public API
@@ -82,8 +82,13 @@ public actor LocalSubscriptionStore: UserDefaultsBackedStore {
 
     // MARK: - UserDefaultsBackedStore
 
-    func encodedValue() -> [String: LocalChannel] { channels }
-    func decodeValue(_ decoded: [String: LocalChannel]) { channels = decoded }
+    func encodedValue() -> [String: LocalChannel] {
+        channels
+    }
+
+    func decodeValue(_ decoded: [String: LocalChannel]) {
+        channels = decoded
+    }
 
     func afterPersist() {
         let value = channels

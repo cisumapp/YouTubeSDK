@@ -1,7 +1,6 @@
 import Foundation
 
 extension InternalAuthService {
-
     // MARK: - Retry
 
     /// Retries `operation` up to `maxAttempts` times on transient URLErrors,
@@ -20,11 +19,12 @@ extension InternalAuthService {
         ]
         var delay = initialDelay
         var lastError: (any Error)?
-        for attempt in 1...maxAttempts {
+        for attempt in 1 ... maxAttempts {
             do {
                 return try await operation()
             } catch let urlError as URLError
-                    where transientCodes.contains(urlError.code) && attempt < maxAttempts {
+                where transientCodes.contains(urlError.code) && attempt < maxAttempts
+            {
                 authLog.notice("retryWithBackoff: attempt \(attempt)/\(maxAttempts) failed (\(urlError.code.rawValue)), retrying in \(Int(delay))s")
                 lastError = urlError
                 try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))

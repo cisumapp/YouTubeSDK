@@ -98,7 +98,7 @@ public struct PlayerInfo: Sendable {
     /// Empty when the iOS client is used for primary streaming — a fallback web-client
     /// fetch is performed in PlaybackViewModel when this is empty.
     public let endCards: [EndCard]
-    
+
     /// Mapping of unsolved to solved n-parameters (throttle tokens).
     /// Used by YTHLSProxyLoader to rewrite the M3U8 playlist.
     public let nSolver: (unsolved: String, solved: String)?
@@ -115,8 +115,8 @@ public struct PlayerInfo: Sendable {
         // `", "` check correctly excludes them (they have no audio and can't be played).
         let muxed = formats.filter {
             $0.mimeType.hasPrefix("video/mp4") &&
-            $0.mimeType.contains(", ") &&
-            $0.url != nil
+                $0.mimeType.contains(", ") &&
+                $0.url != nil
         }
         return muxed.sorted { ($0.bitrate ?? 0) > ($1.bitrate ?? 0) }.first?.url
     }
@@ -128,8 +128,8 @@ public struct PlayerInfo: Sendable {
     public var bestMuxedDownloadURL: URL? {
         let muxed = formats.filter {
             $0.mimeType.hasPrefix("video/mp4") &&
-            $0.mimeType.contains(", ") &&
-            $0.url != nil
+                $0.mimeType.contains(", ") &&
+                $0.url != nil
         }
         return muxed.sorted { ($0.bitrate ?? 0) > ($1.bitrate ?? 0) }.first?.url
     }
@@ -139,8 +139,8 @@ public struct PlayerInfo: Sendable {
     public var bestAdaptiveInternalVideoURL: URL? {
         let videoOnly = formats.filter {
             $0.mimeType.hasPrefix("video/mp4") &&
-            !$0.mimeType.contains(", ") &&
-            $0.url != nil
+                !$0.mimeType.contains(", ") &&
+                $0.url != nil
         }
         return videoOnly.sorted { ($0.bitrate ?? 0) > ($1.bitrate ?? 0) }.first?.url
     }
@@ -150,7 +150,7 @@ public struct PlayerInfo: Sendable {
     public var bestAdaptiveAudioURL: URL? {
         let audioOnly = formats.filter {
             $0.mimeType.hasPrefix("audio/mp4") &&
-            $0.url != nil
+                $0.url != nil
         }
         return audioOnly.sorted { ($0.bitrate ?? 0) > ($1.bitrate ?? 0) }.first?.url
     }
@@ -235,15 +235,15 @@ public enum APIError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .httpError(let code):      return "HTTP error \(code)"
-        case .decodingError(let msg):   return "Decoding error: \(msg)"
-        case .notAuthenticated:          return "You are not signed in"
-        case .unavailable(let reason):   return reason
-        case .invalidURL(let endpoint):  return "Could not build URL for endpoint: \(endpoint)"
+        case let .httpError(code): "HTTP error \(code)"
+        case let .decodingError(msg): "Decoding error: \(msg)"
+        case .notAuthenticated: "You are not signed in"
+        case let .unavailable(reason): reason
+        case let .invalidURL(endpoint): "Could not build URL for endpoint: \(endpoint)"
         case .ipBlocked:
-            return "YouTube is temporarily blocking this network. Disable your VPN, try a different VPN server, or wait a few minutes and retry."
+            "YouTube is temporarily blocking this network. Disable your VPN, try a different VPN server, or wait a few minutes and retry."
         case .signInRequired:
-            return "This video is age-restricted or requires sign in to watch."
+            "This video is age-restricted or requires sign in to watch."
         }
     }
 }

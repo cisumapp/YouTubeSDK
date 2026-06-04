@@ -2,13 +2,13 @@ import Foundation
 import Observation
 
 // MARK: - SearchViewModel
+
 //
 // Mirrors the Android `SearchPresenter`.
 
 @MainActor
 @Observable
 public final class SearchViewModel {
-
     public var query: String = ""
     public var filter: SearchFilter = .default
     public private(set) var results: [InternalVideo] = []
@@ -26,7 +26,7 @@ public final class SearchViewModel {
     private static let recommendedTerms: [String] = [
         "trending videos", "music 2025", "cooking recipes", "travel vlog",
         "programming tutorial", "workout", "movie trailer", "lofi hip hop",
-        "documentary", "gaming highlights"
+        "documentary", "gaming highlights",
     ]
 
     /// History entries that match the current query (case-insensitive). Returns
@@ -40,7 +40,7 @@ public final class SearchViewModel {
     public init(api: any InnerTubeAPIProtocol = InnerTubeAPI(), historyStore: SearchHistoryStore = .shared) {
         self.api = api
         self.historyStore = historyStore
-        suggestions = Self.recommendedTerms
+        self.suggestions = Self.recommendedTerms
         Task { await loadHistory() }
     }
 
@@ -167,7 +167,6 @@ public final class SearchViewModel {
 @MainActor
 @Observable
 public final class ChannelViewModel {
-
     public private(set) var channel: Channel?
     public private(set) var videos: [InternalVideo] = []
     public private(set) var isLoading: Bool = false
@@ -190,7 +189,7 @@ public final class ChannelViewModel {
         do {
             let (ch, group) = try await api.fetchChannel(channelId: channelId)
             channel = ch
-            videos  = group.videos
+            videos = group.videos
             nextPageToken = group.nextPageToken
         } catch {
             self.error = error

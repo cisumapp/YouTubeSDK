@@ -6,7 +6,6 @@ private let tubeLog = Logger(subsystem: appSubsystem, category: "InnerTube")
 // MARK: - Channel endpoints
 
 extension InnerTubeAPI {
-
     public func fetchChannel(channelId: String) async throws -> (channel: Channel, videos: InternalVideoGroup) {
         // @handle strings are not valid browseIds — resolve to the real UC… channel ID first.
         let resolvedId: String
@@ -30,15 +29,14 @@ extension InnerTubeAPI {
     /// Used by BrowseViewModel.enrichChannelAvatars() to patch avatar URLs into the
     /// channel list after the initial fast tile-based load.
     public func fetchChannelThumbnailURL(channelId: String) async throws -> URL? {
-        let resolvedId: String
-        if channelId.hasPrefix("@") {
-            resolvedId = try await resolveChannelHandle(channelId)
+        let resolvedId: String = if channelId.hasPrefix("@") {
+            try await resolveChannelHandle(channelId)
         } else {
-            resolvedId = channelId
+            channelId
         }
         var body = makeBody(client: webClientContext)
         body["browseId"] = resolvedId
-        body["params"] = "EgVhYm91dA=="  // About tab — header only, no video grid
+        body["params"] = "EgVhYm91dA==" // About tab — header only, no video grid
         let data = try await post(endpoint: "browse", body: body)
         let (channel, _) = try parseChannel(from: data, channelId: resolvedId)
         return channel.thumbnailURL
@@ -48,7 +46,7 @@ extension InnerTubeAPI {
         var body = makeBody(client: webClientContext, continuationToken: continuationToken)
         if continuationToken == nil {
             body["browseId"] = channelId
-            body["params"] = "EgZ2aWRlb3PyBgQKAjoA"  // "InternalVideos" tab parameter
+            body["params"] = "EgZ2aWRlb3PyBgQKAjoA" // "InternalVideos" tab parameter
         }
         let videosParams = (body["params"] as? String) ?? "nil"
         tubeLog.notice("fetchChannelInternalVideos browseId=\(channelId, privacy: .public) hasContinuation=\(continuationToken != nil, privacy: .public) params=\(videosParams, privacy: .public)")
@@ -100,13 +98,15 @@ extension InnerTubeAPI {
         let thumbURL: URL? = {
             // c4TabbedHeaderRenderer path
             if let url = ((header?["avatar"] as? [String: Any])?["thumbnails"] as? [[String: Any]])?
-                .last.flatMap({ $0["url"] as? String }).flatMap({ URL(string: $0) }) {
+                .last.flatMap({ $0["url"] as? String }).flatMap({ URL(string: $0) })
+            {
                 return url
             }
             // pageHeaderViewModel path: content.pageHeaderViewModel.image.decoratedAvatarViewModel.avatar.avatarViewModel.image.sources
             if let hvm = (header?["content"] as? [String: Any])?["pageHeaderViewModel"] as? [String: Any],
                let sources = ((((hvm["image"] as? [String: Any])?["decoratedAvatarViewModel"] as? [String: Any])?["avatar"] as? [String: Any])?["avatarViewModel"] as? [String: Any])?["image"] as? [String: Any],
-               let urlStr = (sources["sources"] as? [[String: Any]])?.last?["url"] as? String {
+               let urlStr = (sources["sources"] as? [[String: Any]])?.last?["url"] as? String
+            {
                 return URL(string: urlStr)
             }
             // metadata fallback: json.metadata.channelMetadataRenderer.avatar.thumbnails
@@ -129,12 +129,13 @@ extension InnerTubeAPI {
     }
 
     // MARK: – Guide channels parser (/guide endpoint)
-    //
-    // The TV guide sidebar returns guideEntryRenderer items inside
-    // guideSubscriptionsSectionRenderer which carry:
-    //   navigationEndpoint.browseEndpoint.browseId  → channel ID
-    //   formattedTitle / title                       → channel name
-    //   thumbnail.thumbnails                         → avatar URL
+
+    ///
+    /// The TV guide sidebar returns guideEntryRenderer items inside
+    /// guideSubscriptionsSectionRenderer which carry:
+    ///   navigationEndpoint.browseEndpoint.browseId  → channel ID
+    ///   formattedTitle / title                       → channel name
+    ///   thumbnail.thumbnails                         → avatar URL
     func parseGuideChannels(from json: [String: Any]) -> [Channel] {
         var channels: [Channel] = []
         var seen = Set<String>()
@@ -156,7 +157,8 @@ extension InnerTubeAPI {
                         let allKeys = entry.keys.sorted()
                         tubeLog.notice("guideEntryRenderer (channel) keys: \(allKeys, privacy: .public)")
                         if let data = try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys]),
-                           let str = String(data: data, encoding: .utf8) {
+                           let str = String(data: data, encoding: .utf8)
+                        {
                             tubeLog.notice("guideEntryRenderer (channel) JSON: \(String(str.prefix(1500)), privacy: .public)")
                         }
                     }
@@ -192,14 +194,18 @@ extension InnerTubeAPI {
                     }
                     return
                 }
-                for value in dict.values { walk(value, depth: depth + 1) }
+                for value in dict.values {
+                    walk(value, depth: depth + 1)
+                }
             } else if let arr = obj as? [Any] {
-                for item in arr { walk(item, depth: depth + 1) }
+                for item in arr {
+                    walk(item, depth: depth + 1)
+                }
             }
         }
 
         walk(json)
-        let withThumbs = channels.filter { $0.thumbnailURL != nil }.count
+        let withThumbs = channels.count(where: { $0.thumbnailURL != nil })
         // Sort alphabetically so the list is stable and predictable regardless of
         // the order YouTube's guide API returns entries. Matches LocalSubscriptionStore.
         channels.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
@@ -208,9 +214,10 @@ extension InnerTubeAPI {
     }
 
     // MARK: – Channel renderer parser (TV/WEB client subscriptions "Channels" tab)
-    //
-    // Handles channelRenderer, gridChannelRenderer, compactChannelRenderer, and
-    // TVHTML5 tileRenderer with TILE_CONTENT_TYPE_CHANNEL.
+
+    ///
+    /// Handles channelRenderer, gridChannelRenderer, compactChannelRenderer, and
+    /// TVHTML5 tileRenderer with TILE_CONTENT_TYPE_CHANNEL.
     private func parseChannelRenderers(from json: [String: Any]) -> [Channel] {
         var channels: [Channel] = []
         var seen = Set<String>()
@@ -221,7 +228,7 @@ extension InnerTubeAPI {
             // channelId: direct "channelId" key, or from navigationEndpoint.browseEndpoint.browseId
             let channelId: String? = renderer["channelId"] as? String
                 ?? (renderer["navigationEndpoint"] as? [String: Any])
-                    .flatMap { ($0["browseEndpoint"] as? [String: Any])?["browseId"] as? String }
+                .flatMap { ($0["browseEndpoint"] as? [String: Any])?["browseId"] as? String }
             guard let channelId, !channelId.isEmpty else { return nil }
 
             let title = (renderer["title"] as? [String: Any]).flatMap { extractText($0) }
@@ -253,7 +260,7 @@ extension InnerTubeAPI {
             let onSelectCommand = tile["onSelectCommand"] as? [String: Any]
             let channelId: String? = (onSelectCommand?["browseEndpoint"] as? [String: Any])?["browseId"] as? String
                 ?? (onSelectCommand?["innertubeCommand"] as? [String: Any])
-                    .flatMap { ($0["browseEndpoint"] as? [String: Any])?["browseId"] as? String }
+                .flatMap { ($0["browseEndpoint"] as? [String: Any])?["browseId"] as? String }
             guard let channelId, !channelId.isEmpty else { return nil }
             let tileMetadata = (tile["metadata"] as? [String: Any])?["tileMetadataRenderer"] as? [String: Any]
             let title = (tileMetadata?["title"] as? [String: Any]).flatMap { extractText($0) } ?? ""
@@ -278,10 +285,12 @@ extension InnerTubeAPI {
                 }
                 // Dump the first avatarLockupRenderer that actually has a navigationEndpoint (i.e. is a channel, not a sort header)
                 if !avatarLockupDumped, let lockup = dict["avatarLockupRenderer"] as? [String: Any],
-                   lockup["navigationEndpoint"] != nil {
+                   lockup["navigationEndpoint"] != nil
+                {
                     avatarLockupDumped = true
                     if let data = try? JSONSerialization.data(withJSONObject: lockup, options: [.sortedKeys]),
-                       let str = String(data: data, encoding: .utf8) {
+                       let str = String(data: data, encoding: .utf8)
+                    {
                         tubeLog.notice("avatarLockupRenderer (with nav) JSON: \(String(str.prefix(2000)), privacy: .public)")
                     }
                 }
@@ -289,13 +298,15 @@ extension InnerTubeAPI {
                 if !notificationDumped, let notif = dict["notificationMultiActionRenderer"] as? [String: Any] {
                     notificationDumped = true
                     if let data = try? JSONSerialization.data(withJSONObject: notif, options: [.sortedKeys]),
-                       let str = String(data: data, encoding: .utf8) {
+                       let str = String(data: data, encoding: .utf8)
+                    {
                         tubeLog.notice("notificationMultiActionRenderer JSON: \(String(str.prefix(2000)), privacy: .public)")
                     }
                 }
                 // TVHTML5 channel tile
                 if let tile = dict["tileRenderer"] as? [String: Any],
-                   let channel = extractChannelFromTile(tile) {
+                   let channel = extractChannelFromTile(tile)
+                {
                     if seen.insert(channel.id).inserted { channels.append(channel) }
                     return
                 }
@@ -303,28 +314,34 @@ extension InnerTubeAPI {
                 let rendererKeys = ["channelRenderer", "gridChannelRenderer", "compactChannelRenderer"]
                 if let key = rendererKeys.first(where: { dict[$0] is [String: Any] }),
                    let renderer = dict[key] as? [String: Any],
-                   let channel = extractChannel(from: renderer) {
+                   let channel = extractChannel(from: renderer)
+                {
                     if seen.insert(channel.id).inserted { channels.append(channel) }
                     return
                 }
-                for value in dict.values { walk(value, depth: depth + 1) }
+                for value in dict.values {
+                    walk(value, depth: depth + 1)
+                }
             } else if let arr = obj as? [Any] {
-                for item in arr { walk(item, depth: depth + 1) }
+                for item in arr {
+                    walk(item, depth: depth + 1)
+                }
             }
         }
 
         walk(json)
-        let withThumbs = channels.filter { $0.thumbnailURL != nil }.count
+        let withThumbs = channels.count(where: { $0.thumbnailURL != nil })
         let rendererSample = Array(encounteredRendererKeys.sorted().prefix(12))
         tubeLog.notice("parseChannelRenderers → \(channels.count, privacy: .public) channels, \(withThumbs, privacy: .public) with thumbnail | renderer keys seen: \(rendererSample, privacy: .public)")
         return channels
     }
 
     // MARK: – Subscribed channels parser (TVHTML5 fallback)
-    //
-    // Extracts unique Channel objects from a TVHTML5 FEsubscriptions response.
-    // Each video tileRenderer carries the channelId and channel name in its metadata;
-    // thumbnail URLs and subscriber counts are not present and remain nil.
+
+    ///
+    /// Extracts unique Channel objects from a TVHTML5 FEsubscriptions response.
+    /// Each video tileRenderer carries the channelId and channel name in its metadata;
+    /// thumbnail URLs and subscriber counts are not present and remain nil.
     func parseSubscribedChannels(from json: [String: Any]) -> [Channel] {
         var channels: [Channel] = []
         var seen = Set<String>()
@@ -381,7 +398,8 @@ extension InnerTubeAPI {
                     if !tileDumped {
                         tileDumped = true
                         if let data = try? JSONSerialization.data(withJSONObject: tile, options: [.sortedKeys]),
-                           let str = String(data: data, encoding: .utf8) {
+                           let str = String(data: data, encoding: .utf8)
+                        {
                             tubeLog.notice("parseSubscribedChannels first tileRenderer JSON: \(String(str.prefix(2000)), privacy: .public)")
                         }
                     }
@@ -392,9 +410,13 @@ extension InnerTubeAPI {
                     }
                     return
                 }
-                for value in dict.values { walk(value, depth: depth + 1) }
+                for value in dict.values {
+                    walk(value, depth: depth + 1)
+                }
             } else if let arr = obj as? [Any] {
-                for item in arr { walk(item, depth: depth + 1) }
+                for item in arr {
+                    walk(item, depth: depth + 1)
+                }
             }
         }
 

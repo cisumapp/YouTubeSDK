@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - UserDefaultsBackedStore
+
 //
 // Protocol shared by all actor-based stores that persist a single Codable value
 // to UserDefaults as JSON.
@@ -42,7 +43,7 @@ extension UserDefaultsBackedStore {
     /// Decodes the stored value from `defaults`. Nonisolated — safe to call
     /// from actor `init` before isolation is established.
     static func loadFrom(_ defaults: UserDefaults) -> Value? {
-        guard let data = defaults.data(forKey: Self.defaultsKey),
+        guard let data = defaults.data(forKey: defaultsKey),
               let decoded = try? JSONDecoder().decode(Value.self, from: data)
         else { return nil }
         return decoded

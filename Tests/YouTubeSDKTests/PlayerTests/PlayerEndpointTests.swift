@@ -4,7 +4,7 @@ import Testing
 
 struct PlayerEndpointTests {
     @Test("Player endpoint returns playable HLS or audio URL")
-    func testPlayerPlayableURL() async throws {
+    func playerPlayableURL() async throws {
         // Arrange
         let client = YouTubeClient()
         let videoId = "dQw4w9WgXcQ" // Known public video

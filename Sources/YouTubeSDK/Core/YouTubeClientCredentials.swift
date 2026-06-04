@@ -7,6 +7,7 @@ import FoundationNetworking
 private let credLog = Logger(subsystem: appSubsystem, category: "Credentials")
 
 // MARK: - YouTubeClientCredentials
+
 //
 // Mirrors Android's AppServiceInt / ClientData approach:
 // fetches the YouTube TV base.js file and extracts the OAuth client_id and
@@ -23,12 +24,11 @@ public struct YouTubeClientCredentials: Sendable {
 }
 
 public actor YouTubeClientCredentialsFetcher {
-
-    // Known-good fallback that matches what Android scrapes most of the time.
-    // Used when the JS scrape fails so the app still works without a network
-    // round-trip on first launch.
+    /// Known-good fallback that matches what Android scrapes most of the time.
+    /// Used when the JS scrape fails so the app still works without a network
+    /// round-trip on first launch.
     private static let fallback = YouTubeClientCredentials(
-        clientId:     "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com",
+        clientId: "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com",
         clientSecret: "SboVhoG9s0rNafixCSGGKXAT"
     )
 
@@ -109,7 +109,7 @@ public actor YouTubeClientCredentialsFetcher {
         // Mirrors Android ClientData.java regex patterns:
         //   clientId:"([-\w]+\.apps\.googleusercontent\.com)",\n?[$\w]+:"\w+"
         //   clientId:"[-\w]+\.apps\.googleusercontent\.com",\n?[$\w]+:"(\w+)"
-        let clientIdPattern  = #"clientId:"([-\w]+\.apps\.googleusercontent\.com)""#
+        let clientIdPattern = #"clientId:"([-\w]+\.apps\.googleusercontent\.com)""#
         let clientSecPattern = #"clientId:"[-\w]+\.apps\.googleusercontent\.com",\n?[$\w]+:"(\w+)""#
 
         guard let clientId = firstCapture(in: js, pattern: clientIdPattern) else {
@@ -133,7 +133,7 @@ public actor YouTubeClientCredentialsFetcher {
     private func fetchText(request: URLRequest) async -> String? {
         guard let (data, response) = try? await session.data(for: request),
               let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode)
+              (200 ..< 300).contains(http.statusCode)
         else {
             let url = request.url?.absoluteString ?? "?"
             credLog.error("❌ HTTP request failed: \(url, privacy: .public)")

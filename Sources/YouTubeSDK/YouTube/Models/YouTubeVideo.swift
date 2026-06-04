@@ -7,7 +7,7 @@
 
 import Foundation
 
-public struct YouTubeVideo: Decodable, Identifiable, Sendable {
+public struct YouTubeVideo: Codable, Identifiable, Sendable {
     public let id: String
     public let title: String
     public let viewCount: String
@@ -16,30 +16,30 @@ public struct YouTubeVideo: Decodable, Identifiable, Sendable {
     public let description: String
     public let lengthInSeconds: String
     public let thumbnailURL: String?
-    
-    // The new Stream Data
+
+    /// The new Stream Data
     public var streamingData: StreamingData?
-    
+
     public let captions: [CaptionTrack]?
-    
+
     enum CodingKeys: String, CodingKey {
         case videoDetails
         case streamingData
     }
-    
+
     enum VideoDetailsKeys: String, CodingKey {
         case videoId, title, viewCount, author, channelId
         case shortDescription, thumbnail
         case lengthInSeconds = "lengthSeconds"
     }
-    
+
     enum ThumbnailKeys: String, CodingKey {
         case thumbnails
     }
-    
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        
+
         // 1. Decode Details
         let details = try container.nestedContainer(keyedBy: VideoDetailsKeys.self, forKey: .videoDetails)
         self.id = try details.decode(String.self, forKey: .videoId)
@@ -49,38 +49,51 @@ public struct YouTubeVideo: Decodable, Identifiable, Sendable {
         self.channelId = try details.decodeIfPresent(String.self, forKey: .channelId) ?? ""
         self.description = try details.decodeIfPresent(String.self, forKey: .shortDescription) ?? ""
         self.lengthInSeconds = try details.decodeIfPresent(String.self, forKey: .lengthInSeconds) ?? "0"
-        
+
         // Thumbnail parsing
         if let thumbContainer = try? details.nestedContainer(keyedBy: ThumbnailKeys.self, forKey: .thumbnail),
-           let thumbs = try? thumbContainer.decode([Thumbnail].self, forKey: .thumbnails) {
+           let thumbs = try? thumbContainer.decode([Thumbnail].self, forKey: .thumbnails)
+        {
             self.thumbnailURL = thumbs.last?.url // Get the largest one
         } else {
             self.thumbnailURL = nil
         }
-        
+
         // 2. Decode Streams
         self.streamingData = try container.decodeIfPresent(StreamingData.self, forKey: .streamingData)
-        
+
         // Manual Parsing for Captions (Nested deep in playerCaptionsTracklistRenderer)
         // Usually found in the root dictionary, not videoDetails.
         // Since we are inside a specific container structure, we might need a manual init or helper.
         // For simplicity, let's assume we parse it manually in the Client or use optional chaining in init(from data).
-        
+
         self.captions = nil
     }
-    
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        var details = container.nestedContainer(keyedBy: VideoDetailsKeys.self, forKey: .videoDetails)
+        try details.encode(id, forKey: .videoId)
+        try details.encode(title, forKey: .title)
+        try details.encode(viewCount, forKey: .viewCount)
+        try details.encode(author, forKey: .author)
+        try details.encode(channelId, forKey: .channelId)
+        try details.encode(description, forKey: .shortDescription)
+        try details.encode(lengthInSeconds, forKey: .lengthInSeconds)
+    }
+
     /// Returns the HLS URL if available (Best for AVPlayer).
     public var hlsURL: URL? {
         guard let urlString = streamingData?.hlsManifestUrl else { return nil }
         return URL(string: urlString)
     }
-    
+
     /// Returns the best audio-only stream for AVPlayer.
     /// Prefers AAC/MP4 (natively supported) over Opus/WebM (unsupported on iOS).
     public var bestAudioStream: Stream? {
         guard let audioStreams = streamingData?.adaptiveFormats
             .filter({ $0.isAudioOnly && $0.playbackUrl != nil }),
-              !audioStreams.isEmpty else { return nil }
+            !audioStreams.isEmpty else { return nil }
 
         // Prefer AAC (audio/mp4 — native iOS support) over Opus/WebM
         let aac = audioStreams.filter { $0.mimeType.contains("mp4") }
@@ -93,14 +106,14 @@ public struct YouTubeVideo: Decodable, Identifiable, Sendable {
     /// Returns the best muxed video (Video + Audio combined).
     /// Usually capped at 720p by YouTube, but easy to play since it's a single stream.
     public var bestMuxedStream: Stream? {
-        return streamingData?.formats
+        streamingData?.formats
             .filter { $0.playbackUrl != nil }
             .sorted { ($0.height ?? 0) > ($1.height ?? 0) }
             .first
     }
 }
 
-// Simple Helper for Thumbnails
+/// Simple Helper for Thumbnails
 private struct Thumbnail: Decodable {
     let url: String
     let width: Int
@@ -118,76 +131,83 @@ public extension YouTubeVideo {
     init?(from data: [String: Any]) {
         guard let id = data["videoId"] as? String else { return nil }
         self.id = id
-        
+
         // Title
         if let titleData = data["title"] as? [String: Any],
            let runs = titleData["runs"] as? [[String: Any]],
-           let text = runs.first?["text"] as? String {
+           let text = runs.first?["text"] as? String
+        {
             self.title = text
         } else if let simple = (data["title"] as? [String: Any])?["simpleText"] as? String {
             self.title = simple
         } else {
             self.title = "Unknown"
         }
-        
+
         // View Count
         if let viewData = data["viewCountText"] as? [String: Any],
-           let simple = viewData["simpleText"] as? String {
+           let simple = viewData["simpleText"] as? String
+        {
             self.viewCount = simple
         } else if let shortViewData = data["shortViewCountText"] as? [String: Any],
-                  let simple = shortViewData["simpleText"] as? String {
+                  let simple = shortViewData["simpleText"] as? String
+        {
             self.viewCount = simple
         } else {
             self.viewCount = "0"
         }
-        
+
         // Author/Channel (ownerText for standard videoRenderer, byline for compact/videoWithContext)
         let bylineRuns =
             (data["ownerText"] as? [String: Any])?["runs"] as? [[String: Any]] ??
             (data["longBylineText"] as? [String: Any])?["runs"] as? [[String: Any]] ??
             (data["shortBylineText"] as? [String: Any])?["runs"] as? [[String: Any]]
-        
+
         if let runs = bylineRuns,
-           let name = runs.first?["text"] as? String {
-             self.author = name
-             let nav = runs.first?["navigationEndpoint"] as? [String: Any]
-             self.channelId = (nav?["browseEndpoint"] as? [String: Any])?["browseId"] as? String ?? ""
-         } else {
-             self.author = "Unknown"
-             self.channelId = ""
-         }
-        
+           let name = runs.first?["text"] as? String
+        {
+            self.author = name
+            let nav = runs.first?["navigationEndpoint"] as? [String: Any]
+            self.channelId = (nav?["browseEndpoint"] as? [String: Any])?["browseId"] as? String ?? ""
+        } else {
+            self.author = "Unknown"
+            self.channelId = ""
+        }
+
         // Thumbnail
         if let thumbDetails = data["thumbnail"] as? [String: Any],
            let thumbs = thumbDetails["thumbnails"] as? [[String: Any]],
-           let url = thumbs.last?["url"] as? String {
+           let url = thumbs.last?["url"] as? String
+        {
             self.thumbnailURL = url
         } else {
             self.thumbnailURL = nil
         }
-        
+
         // Length
         if let lengthData = data["lengthText"] as? [String: Any],
-           let simple = lengthData["simpleText"] as? String {
+           let simple = lengthData["simpleText"] as? String
+        {
             self.lengthInSeconds = simple // Keep as string "3:45"
         } else {
             self.lengthInSeconds = ""
         }
-        
+
         self.description = ""
         self.streamingData = nil // Search results don't have streams
-        
+
         // Extract Captions
         var tracks: [CaptionTrack] = []
         if let captionsData = data["captions"] as? [String: Any],
            let playerCaptions = captionsData["playerCaptionsTracklistRenderer"] as? [String: Any],
-           let trackList = playerCaptions["captionTracks"] as? [[String: Any]] {
-            
+           let trackList = playerCaptions["captionTracks"] as? [[String: Any]]
+        {
             for track in trackList {
                 if let url = track["baseUrl"] as? String,
                    let nameData = track["name"] as? [String: Any],
                    let name = (nameData["simpleText"] as? String) ?? (nameData["runs"] as? [[String: Any]])?.first?["text"] as? String,
-                   let lang = track["languageCode"] as? String {
+                   let lang = track["languageCode"] as? String
+                {
                     tracks.append(CaptionTrack(baseUrl: url, name: name, languageCode: lang))
                 }
             }
@@ -201,6 +221,29 @@ public extension YouTubeVideo {
         guard hlsURL == nil else { return false }
         // Requires deciphering when there is a signatureCipher but no direct or proxy URL
         return streamingData?.adaptiveFormats.first?.playbackUrl == nil &&
-               streamingData?.adaptiveFormats.first?.signatureCipher != nil
+            streamingData?.adaptiveFormats.first?.signatureCipher != nil
+    }
+}
+
+public extension YouTubeVideo {
+    /// Direct initializer for synthetic/cached video objects, bypassing the JSON roundtrip.
+    init(
+        id: String,
+        title: String,
+        author: String,
+        lengthInSeconds: String = "0",
+        thumbnailURL: String? = nil,
+        streamingData: StreamingData? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.author = author
+        self.viewCount = "0"
+        self.channelId = ""
+        self.description = ""
+        self.lengthInSeconds = lengthInSeconds
+        self.thumbnailURL = thumbnailURL
+        self.streamingData = streamingData
+        self.captions = nil
     }
 }

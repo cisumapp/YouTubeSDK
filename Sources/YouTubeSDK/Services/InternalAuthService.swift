@@ -2,10 +2,10 @@ import Foundation
 import Observation
 import os
 
-
 let authLog = ViewModelLogger(category: "Auth")
 
 // MARK: - InternalAuthService
+
 //
 // Google OAuth 2.0 **Device Authorization Grant** flow (RFC 8628).
 //
@@ -24,42 +24,42 @@ let authLog = ViewModelLogger(category: "Auth")
 @MainActor
 @Observable
 final class InternalAuthService {
-
     // MARK: - Observable state
 
-    public internal(set) var isSignedIn: Bool = false
-    public internal(set) var accountName: String?
-    public internal(set) var accountAvatarURL: URL?
-    public var error: Error?
+    internal(set) var isSignedIn: Bool = false
+    internal(set) var accountName: String?
+    internal(set) var accountAvatarURL: URL?
+    var error: Error?
 
     /// Non-nil while waiting for the user to enter the code at youtube.com/activate.
     /// `internal(set)` so extension files (e.g. InternalAuthService+DeviceFlow) can clear it.
-    public internal(set) var pendingActivation: ActivationInfo?
+    internal(set) var pendingActivation: ActivationInfo?
 
     // MARK: - ActivationInfo
 
-    public struct ActivationInfo: Sendable {
+    struct ActivationInfo {
         /// The short code the user types at youtube.com/activate (e.g. "ABCD-1234").
-        public let userCode: String
+        let userCode: String
         /// Typically https://yt.be/activate (as used by the Android SmartTube client).
-        public let verificationURL: URL
+        let verificationURL: URL
         /// When this activation attempt expires.
-        public let expiresAt: Date
+        let expiresAt: Date
     }
 
     // MARK: - Internal state
+
     // Properties below are `internal` (no keyword) so extension files in this
     // module can read and write them without going through private accessors.
 
-    public internal(set) var accessToken: String?
+    internal(set) var accessToken: String?
     /// YouTube.com SAPISID cookie value obtained via the OAuthLogin/MergeSession flow.
     /// Used by InnerTubeAPI.postWebCreator to compute the SAPISIDHASH Authorization header.
     /// Set asynchronously after TV device sign-in completes; nil when signed out or not yet fetched.
-    public internal(set) var sapisid: String?
+    internal(set) var sapisid: String?
     /// Numeric Google Account ID (GAIA "sub" claim) extracted from the OpenID Connect id_token
     /// or from tokeninfo when `openid` scope is present. Required by the Chromium-style Multilogin
     /// endpoint (Authorization: MultiBearer {token}:{gaiaId}).
-    public internal(set) var gaiaId: String?
+    internal(set) var gaiaId: String?
     var refreshToken: String?
     var tokenExpiry: Date?
     var pollTask: Task<Void, Never>?
@@ -83,26 +83,26 @@ final class InternalAuthService {
     private var currentCreds: YouTubeClientCredentials?
     private var isSigningIn: Bool = false
 
-    public let tokenManager: TokenManager
+    let tokenManager: TokenManager
 
     // MARK: - Static endpoint URLs (known-valid literals)
 
-    static let deviceCodeURL   = URL(string: "https://oauth2.googleapis.com/device/code")!
-    static let tokenURL        = URL(string: "https://oauth2.googleapis.com/token")!
+    static let deviceCodeURL = URL(string: "https://oauth2.googleapis.com/device/code")!
+    static let tokenURL = URL(string: "https://oauth2.googleapis.com/token")!
     static let accountsListURL = URL(string: "https://www.youtube.com/youtubei/v1/account/accounts_list")!
 
-    public init() {
-        tokenManager = TokenManager()
+    init() {
+        self.tokenManager = TokenManager()
         loadFromKeychain()
         // UI-testing override: treat the session as signed-in so the home feed
         // renders its full shelves (including the injected Shorts row) without
         // requiring real keychain credentials.
         if ProcessInfo.processInfo.arguments.contains("--uitesting-signed-in") {
-            isSignedIn = true
+            self.isSignedIn = true
         }
         // If already signed in but no account info (e.g. stored before the
         // fetchUserInfo fix), refresh it silently in the background.
-        if isSignedIn && accountName == nil {
+        if isSignedIn, accountName == nil {
             Task {
                 do { try await fetchUserInfo() }
                 catch { authLog.error("fetchUserInfo on init failed: \(String(describing: error))") }
@@ -114,7 +114,7 @@ final class InternalAuthService {
 
     /// Step 1 – request a device code and expose the user_code for display.
     /// Call this when the user taps "Sign in".
-    public func beginSignIn() async {
+    func beginSignIn() async {
         guard !isSigningIn else {
             authLog.notice("beginSignIn() — already in progress, ignoring duplicate call")
             return
@@ -147,12 +147,14 @@ final class InternalAuthService {
             // Step 2 – start polling in the background
             let interval = max(TimeInterval(deviceResponse.interval), 5)
             currentDeviceCode = deviceResponse.deviceCode
-            currentInterval   = interval
-            currentCreds      = creds
+            currentInterval = interval
+            currentCreds = creds
             pollTask = Task { [weak self] in
-                await self?.pollForToken(deviceCode: deviceResponse.deviceCode,
-                                         interval: interval,
-                                         creds: creds)
+                await self?.pollForToken(
+                    deviceCode: deviceResponse.deviceCode,
+                    interval: interval,
+                    creds: creds
+                )
             }
         } catch {
             authLog.error("❌ beginSignIn error: \(String(describing: error))")
@@ -161,16 +163,16 @@ final class InternalAuthService {
     }
 
     /// Cancel an in-progress activation.
-    public func cancelSignIn() {
+    func cancelSignIn() {
         pollTask?.cancel()
         pollTask = nil
         pendingActivation = nil
         currentDeviceCode = nil
-        currentCreds      = nil
+        currentCreds = nil
     }
 
     /// Call when the app returns to the foreground while a sign-in is in progress.
-    public func handleForeground() {
+    func handleForeground() {
         guard !isSignedIn, accessToken == nil else { return }
         guard let pending = pendingActivation, pending.expiresAt > Date() else { return }
         guard let deviceCode = currentDeviceCode, let creds = currentCreds else { return }
@@ -178,16 +180,18 @@ final class InternalAuthService {
         pollTask?.cancel()
         let interval = currentInterval
         pollTask = Task { [weak self] in
-            await self?.pollForToken(deviceCode: deviceCode,
-                                     interval: interval,
-                                     creds: creds,
-                                     pollImmediately: true)
+            await self?.pollForToken(
+                deviceCode: deviceCode,
+                interval: interval,
+                creds: creds,
+                pollImmediately: true
+            )
         }
     }
 
     /// Refreshes the access token now if it has expired or will expire within the next 5 minutes.
     /// Safe to call on every app-active transition. No-op when not signed in.
-    public func refreshIfNeeded() async {
+    func refreshIfNeeded() async {
         guard isSignedIn, let expiry = tokenExpiry else { return }
         guard expiry.timeIntervalSinceNow < 5 * 60 else { return }
         guard let refresh = refreshToken else { return }
@@ -200,18 +204,18 @@ final class InternalAuthService {
         }
     }
 
-    public func signOut() {
+    func signOut() {
         pollTask?.cancel()
         pollTask = nil
         tokenRefreshTask?.cancel()
         tokenRefreshTask = nil
-        accessToken      = nil
-        sapisid          = nil
-        refreshToken     = nil
-        tokenExpiry      = nil
-        accountName      = nil
+        accessToken = nil
+        sapisid = nil
+        refreshToken = nil
+        tokenExpiry = nil
+        accountName = nil
         accountAvatarURL = nil
-        isSignedIn       = false
+        isSignedIn = false
         pendingActivation = nil
         clearKeychain()
     }
@@ -219,23 +223,23 @@ final class InternalAuthService {
     /// Clears the in-memory auth session without touching the keychain.
     /// Used by `--uitesting-sign-out` so UI tests can verify signed-out UI on a
     /// simulator that has real credentials stored in the keychain.
-    public func clearSession() {
+    func clearSession() {
         pollTask?.cancel()
         pollTask = nil
         tokenRefreshTask?.cancel()
         tokenRefreshTask = nil
-        accessToken      = nil
-        sapisid          = nil
-        refreshToken     = nil
-        tokenExpiry      = nil
-        accountName      = nil
+        accessToken = nil
+        sapisid = nil
+        refreshToken = nil
+        tokenExpiry = nil
+        accountName = nil
         accountAvatarURL = nil
-        isSignedIn       = false
+        isSignedIn = false
         pendingActivation = nil
     }
 
     /// Returns a valid access token, refreshing if necessary.
-    public func validAccessToken() async throws -> String {
+    func validAccessToken() async throws -> String {
         if let t = accessToken, let exp = tokenExpiry, exp > Date() { return t }
         guard let refresh = refreshToken else { throw AuthError.notSignedIn }
         let creds = await credentialsFetcher.credentials()
@@ -257,12 +261,12 @@ final class InternalAuthService {
         tokenRefreshTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled, let self else { return }
-            guard self.isSignedIn, let refresh = self.refreshToken else { return }
-            let creds = await self.credentialsFetcher.credentials()
+            guard isSignedIn, let refresh = refreshToken else { return }
+            let creds = await credentialsFetcher.credentials()
             do {
-                try await self.refreshAccessToken(refreshToken: refresh, creds: creds)
+                try await refreshAccessToken(refreshToken: refresh, creds: creds)
                 authLog.notice("scheduleProactiveRefresh() — token refreshed ✅")
-                self.scheduleProactiveRefresh()
+                scheduleProactiveRefresh()
             } catch {
                 authLog.error("scheduleProactiveRefresh() failed: \(String(describing: error))")
             }

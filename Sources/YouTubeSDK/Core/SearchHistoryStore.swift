@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - SearchHistoryStore
+
 //
 // Persists the user's local search query history across sessions.
 // Stores up to `maxEntries` entries, newest-first. Re-submitting an existing
@@ -10,7 +11,6 @@ import Foundation
 // LocalSubscriptionStore, and CurrentQueueStore.
 
 public actor SearchHistoryStore: UserDefaultsBackedStore {
-
     // MARK: - Singleton
 
     public static let shared = SearchHistoryStore()
@@ -25,7 +25,7 @@ public actor SearchHistoryStore: UserDefaultsBackedStore {
 
     private init() {
         self.defaults = .standard
-        if let loaded = Self.loadFrom(.standard) { entries = loaded }
+        if let loaded = Self.loadFrom(.standard) { self.entries = loaded }
     }
 
     /// Designated initializer for unit testing. Pass a unique `suiteName` string
@@ -33,13 +33,15 @@ public actor SearchHistoryStore: UserDefaultsBackedStore {
     /// no shared `UserDefaults` state.
     init(suiteName: String) {
         self.defaults = UserDefaults(suiteName: suiteName) ?? .standard
-        if let loaded = Self.loadFrom(self.defaults) { entries = loaded }
+        if let loaded = Self.loadFrom(defaults) { self.entries = loaded }
     }
 
     // MARK: - Public API
 
     /// All history entries sorted newest-first.
-    public var all: [SearchHistoryEntry] { entries }
+    public var all: [SearchHistoryEntry] {
+        entries
+    }
 
     /// Adds or updates `query` in the history.
     /// If the query already exists it is moved to the top; otherwise a new entry
@@ -69,6 +71,11 @@ public actor SearchHistoryStore: UserDefaultsBackedStore {
 
     // MARK: - UserDefaultsBackedStore
 
-    func encodedValue() -> [SearchHistoryEntry] { entries }
-    func decodeValue(_ decoded: [SearchHistoryEntry]) { entries = decoded }
+    func encodedValue() -> [SearchHistoryEntry] {
+        entries
+    }
+
+    func decodeValue(_ decoded: [SearchHistoryEntry]) {
+        entries = decoded
+    }
 }

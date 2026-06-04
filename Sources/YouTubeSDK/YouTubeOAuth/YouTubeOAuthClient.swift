@@ -9,7 +9,6 @@
 import Foundation
 
 public actor YouTubeOAuthClient {
-
     private let network: NetworkClient
     public static let sharedCookieKey = "youtube_user_cookies"
 
@@ -129,7 +128,8 @@ public actor YouTubeOAuthClient {
             let data = try await network.get("account/account_menu")
 
             if let json = String(data: data, encoding: .utf8),
-               json.contains("googleAccountHeaderRenderer") {
+               json.contains("googleAccountHeaderRenderer")
+            {
                 return true
             }
         } catch {

@@ -10,7 +10,6 @@ import Foundation
 
 @MainActor
 public final class YouTube {
-
     public static let shared = YouTube()
 
     /// Cookie-based session cookies. Setting this updates all child clients.
@@ -38,9 +37,9 @@ public final class YouTube {
     /// OAuth and Session Management Client
     public private(set) var oauth: YouTubeOAuthClient
 
-    // DECIPHER ENGINE: WebViewPoTokenProvider commented out — not needed when streams have direct URLs.
-    // Re-enable if YouTube re-introduces PO token requirements.
-    // private let poTokenProvider = WebViewPoTokenProvider()
+    /// DECIPHER ENGINE: WebViewPoTokenProvider commented out — not needed when streams have direct URLs.
+    /// Re-enable if YouTube re-introduces PO token requirements.
+    /// private let poTokenProvider = WebViewPoTokenProvider()
     private let poTokenProvider: PoTokenProvider? = nil
 
     public init(cookies: String? = nil) {
@@ -62,8 +61,8 @@ public final class YouTube {
     /// - Returns: The obtained OAuth token.
     public func authenticateWithDeviceCode() async throws -> OAuthToken {
         let token = try await oauth.authenticateWithDeviceCode()
-        self.oauthToken = token
-        self.accessToken = token.accessToken
+        oauthToken = token
+        accessToken = token.accessToken
         updateClients()
         print("[YouTubeSDK] OAuth authenticated — token expires: \(token.expiresAt)")
         return token
@@ -73,7 +72,7 @@ public final class YouTube {
     /// - Returns: A valid access token, or nil if not authenticated.
     public func ensureAccessToken() async -> String? {
         if let token = await oauth.getAccessToken() {
-            self.accessToken = token
+            accessToken = token
             updateClients()
             return token
         }
@@ -126,25 +125,25 @@ public final class YouTube {
 
     private func loadStoredToken() async {
         if let token = OAuthTokenStorage.load() {
-            self.oauthToken = token
+            oauthToken = token
             if !token.isExpired {
-                self.accessToken = token.accessToken
+                accessToken = token.accessToken
             } else {
                 do {
                     let refreshed = try await oauth.refreshToken()
-                    self.oauthToken = refreshed
-                    self.accessToken = refreshed.accessToken
+                    oauthToken = refreshed
+                    accessToken = refreshed.accessToken
                     updateClients()
                 } catch {
                     print("[YouTubeSDK] Stored token expired and could not be refreshed: \(error)")
-                    self.accessToken = nil
+                    accessToken = nil
                 }
             }
         }
     }
 
     private func updateClients() {
-        self.main = YouTubeClient(cookies: cookies, accessToken: accessToken, poTokenProvider: poTokenProvider)
-        self.music = YouTubeMusicClient(cookies: cookies, accessToken: accessToken)
+        main = YouTubeClient(cookies: cookies, accessToken: accessToken, poTokenProvider: poTokenProvider)
+        music = YouTubeMusicClient(cookies: cookies, accessToken: accessToken)
     }
 }

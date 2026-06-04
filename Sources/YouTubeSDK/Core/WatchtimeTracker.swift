@@ -4,6 +4,7 @@ import os
 private let trackerLog = Logger(subsystem: appSubsystem, category: "WatchtimeTracker")
 
 // MARK: - WatchtimeTracker
+
 //
 // Owns all watch-history state for a single video session:
 // position saving (InternalVideoStateStore), playback-started ping, and
@@ -26,7 +27,6 @@ private let trackerLog = Logger(subsystem: appSubsystem, category: "WatchtimeTra
 
 @MainActor
 public final class WatchtimeTracker {
-
     // MARK: - Private state
 
     private let api: InnerTubeAPI
@@ -64,15 +64,15 @@ public final class WatchtimeTracker {
         flushDuration: TimeInterval
     ) -> @Sendable () async -> Void {
         // Capture old session synchronously.
-        let oldInternalVideoId    = videoId
-        let oldCPN        = cpn
-        let oldURLs       = trackingURLs
-        let oldSegStart   = segmentStart
-        let api           = self.api
+        let oldInternalVideoId = videoId
+        let oldCPN = cpn
+        let oldURLs = trackingURLs
+        let oldSegStart = segmentStart
+        let api = api
 
         // Reset to new session synchronously — no race with the returned closure.
-        videoId      = newInternalVideoId
-        cpn          = newCPN
+        videoId = newInternalVideoId
+        cpn = newCPN
         trackingURLs = nil
         segmentStart = nil
 
@@ -91,8 +91,13 @@ public final class WatchtimeTracker {
             let segStart = oldSegStart ?? 0
             trackerLog.notice("transition flush: videoId=\(oldInternalVideoId, privacy: .public) st=\(Int(segStart))s et=\(Int(flushPosition))s")
             await InternalVideoStateStore.shared.save(videoId: oldInternalVideoId, position: flushPosition, duration: flushDuration)
-            await api.reportWatchtime(videoId: oldInternalVideoId, cpn: oldCPN, trackingURLs: oldURLs,
-                                      segmentStart: segStart, segmentEnd: flushPosition)
+            await api.reportWatchtime(
+                videoId: oldInternalVideoId,
+                cpn: oldCPN,
+                trackingURLs: oldURLs,
+                segmentStart: segStart,
+                segmentEnd: flushPosition
+            )
         }
     }
 
@@ -115,8 +120,8 @@ public final class WatchtimeTracker {
     public func checkpoint(position: TimeInterval, duration: TimeInterval) async {
         guard !videoId.isEmpty, duration > 0 else { return }
 
-        let vid       = videoId
-        let localCPN  = cpn
+        let vid = videoId
+        let localCPN = cpn
         let localURLs = trackingURLs
 
         if segmentStart == nil {
@@ -132,8 +137,13 @@ public final class WatchtimeTracker {
         let segStart = segmentStart ?? 0
         trackerLog.notice("checkpoint: videoId=\(vid, privacy: .public) st=\(Int(segStart))s et=\(Int(position))s dur=\(Int(duration))s")
         await InternalVideoStateStore.shared.save(videoId: vid, position: position, duration: duration)
-        await api.reportWatchtime(videoId: vid, cpn: localCPN, trackingURLs: localURLs,
-                                   segmentStart: segStart, segmentEnd: position)
+        await api.reportWatchtime(
+            videoId: vid,
+            cpn: localCPN,
+            trackingURLs: localURLs,
+            segmentStart: segStart,
+            segmentEnd: position
+        )
         segmentStart = position
     }
 }

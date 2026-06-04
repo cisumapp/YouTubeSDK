@@ -1,7 +1,6 @@
 import Foundation
 
 extension InternalAuthService {
-
     // MARK: - Persistence (delegates to TokenManager)
 
     func saveToKeychain() {
@@ -23,12 +22,12 @@ extension InternalAuthService {
 
     func loadFromKeychain() {
         let snap = tokenManager.initialSnapshot
-        accessToken      = snap.accessToken
-        refreshToken     = snap.refreshToken
-        tokenExpiry      = snap.tokenExpiry
-        accountName      = snap.accountName
+        accessToken = snap.accessToken
+        refreshToken = snap.refreshToken
+        tokenExpiry = snap.tokenExpiry
+        accountName = snap.accountName
         accountAvatarURL = snap.accountAvatarURL
-        sapisid          = snap.sapisid
+        sapisid = snap.sapisid
         // If the stored access token has already expired, clear it so that
         // view observers (e.g. HomeView.task(id: auth.accessToken)) don't fire
         // API requests with a stale token. scheduleProactiveRefresh() will
@@ -42,7 +41,7 @@ extension InternalAuthService {
         // Trigger even when accessToken is nil (expired) — fetchYouTubeWebCookies
         // calls validAccessToken() which refreshes the token if needed before
         // making any API requests (OAuthLogin → Multilogin).
-        if isSignedIn && sapisid == nil {
+        if isSignedIn, sapisid == nil {
             Task { await self.fetchYouTubeWebCookies() }
         }
     }
@@ -51,4 +50,3 @@ extension InternalAuthService {
         Task { await tokenManager.clearToken() }
     }
 }
-

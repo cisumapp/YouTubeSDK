@@ -4,13 +4,13 @@ import FoundationNetworking
 #endif
 
 // MARK: - SponsorBlockService
+
 //
 // Queries the SponsorBlock API (https://sponsor.ajay.app) to retrieve
 // ad-skip segments for a given video, mirroring the Android
 // SponsorBlockController functionality.
 
 public actor SponsorBlockService {
-
     private let session: URLSession
     private let baseURL = "https://sponsor.ajay.app/api"
 
@@ -49,12 +49,12 @@ public actor SponsorBlockService {
 }
 
 // MARK: - DeArrowService
+
 //
 // Queries the DeArrow API to retrieve community-provided titles and
 // thumbnails, mirroring the Android DeArrowController functionality.
 
 public actor DeArrowService {
-
     private let session: URLSession
     private let baseURL = "https://sponsor.ajay.app/api/branding"
 

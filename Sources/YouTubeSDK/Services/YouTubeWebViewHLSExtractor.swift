@@ -1,8 +1,7 @@
 #if canImport(WebKit)
-import WebKit
 import JavaScriptCore
 import os
-
+import WebKit
 
 private let extractLog = Logger(subsystem: appSubsystem, category: "WebViewHLS")
 
@@ -24,7 +23,6 @@ private let extractLog = Logger(subsystem: appSubsystem, category: "WebViewHLS")
 /// This approach works on both iOS Simulator and real device without any external tools.
 @MainActor
 public final class YouTubeWebViewHLSExtractor: NSObject {
-
     public static let shared = YouTubeWebViewHLSExtractor()
 
     private var webView: WKWebView?
@@ -33,6 +31,10 @@ public final class YouTubeWebViewHLSExtractor: NSObject {
     /// After `extractHLSURL` completes, holds the n-challenge mapping solved in-JS.
     /// `nil` when the URL had no `/n/` or the solver wasn't available.
     public private(set) var extractedNSolver: (unsolved: String, solved: String)?
+    /// The pot= token extracted from the YouTube player's /player API request body,
+    /// set alongside `extractedNSolver` when the JS interceptor finds one in
+    /// `serviceIntegrityDimensions.poToken`. Nil when the player made no BotGuard call.
+    public private(set) var extractedPoToken: String?
 
     // MARK: - Public API
 
@@ -97,7 +99,7 @@ public final class YouTubeWebViewHLSExtractor: NSObject {
 
             guard let url = URL(string: "https://www.youtube.com/watch?v=\(videoId)") else {
                 extractLog.error("❌ [webView] invalid videoId: \(videoId as NSString)")
-                cont.resume(returning: Optional<URL>.none)
+                cont.resume(returning: URL?.none)
                 self.continuation = nil
                 return
             }
@@ -111,9 +113,9 @@ public final class YouTubeWebViewHLSExtractor: NSObject {
             // Timeout safety net.
             self.timeoutTask = Task { @MainActor [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(timeoutSeconds * 1_000_000_000))
-                guard let self, self.continuation != nil else { return }
+                guard let self, continuation != nil else { return }
                 extractLog.notice("⚠️ [webView] timed out for \(videoId as NSString)")
-                self.finish(url: Optional<URL>.none)
+                finish(url: URL?.none)
             }
         }
     }
@@ -128,19 +130,20 @@ public final class YouTubeWebViewHLSExtractor: NSObject {
     ///   2. bridge       — exposes `meriyah` and `astring` as top-level globals
     ///   3. core.min.js — defines `var jsc = (function(e,n){...})(meriyah, astring)` (solver)
     private static func ejsSolverUserScripts() -> [WKUserScript]? {
-        guard let libURL  = Bundle.module.url(forResource: "yt.solver.lib.min",  withExtension: "js"),
+        guard let libURL = Bundle.module.url(forResource: "yt.solver.lib.min", withExtension: "js"),
               let coreURL = Bundle.module.url(forResource: "yt.solver.core.min", withExtension: "js"),
-              let libCode  = try? String(contentsOf: libURL,  encoding: .utf8),
-              let coreCode = try? String(contentsOf: coreURL, encoding: .utf8) else {
+              let libCode = try? String(contentsOf: libURL, encoding: .utf8),
+              let coreCode = try? String(contentsOf: coreURL, encoding: .utf8)
+        else {
             extractLog.warning("⚠️ [webView] EJS solver scripts not found in bundle")
             return nil
         }
         let bridgeCode = "var meriyah = (typeof lib !== 'undefined' && lib.meriyah) || undefined; " +
-                         "var astring = (typeof lib !== 'undefined' && lib.astring) || undefined;"
+            "var astring = (typeof lib !== 'undefined' && lib.astring) || undefined;"
         return [
-            WKUserScript(source: libCode,    injectionTime: .atDocumentStart, forMainFrameOnly: true),
+            WKUserScript(source: libCode, injectionTime: .atDocumentStart, forMainFrameOnly: true),
             WKUserScript(source: bridgeCode, injectionTime: .atDocumentStart, forMainFrameOnly: true),
-            WKUserScript(source: coreCode,   injectionTime: .atDocumentStart, forMainFrameOnly: true),
+            WKUserScript(source: coreCode, injectionTime: .atDocumentStart, forMainFrameOnly: true),
         ]
     }
 
@@ -458,12 +461,15 @@ public final class YouTubeWebViewHLSExtractor: NSObject {
     // MARK: - Private helpers
 
     private func finishWithURL(_ url: URL, poToken: String?) {
+        // Store the pot= token as a separate property so callers can read it from
+        // `extractedPoToken` after `extractHLSURL` returns. Previously the pot was
+        // baked into the manifest URL path (/pot/<token>), which is not a valid CDN
+        // path and would cause a 404 on manifest fetch. The URL is passed unchanged.
+        extractedPoToken = (poToken?.isEmpty == false) ? poToken : nil
         if let pot = poToken, !pot.isEmpty {
-            let potURL = URL(string: url.absoluteString.appending("/pot/\(pot)")) ?? url
-            finish(url: potURL)
-        } else {
-            finish(url: url)
+            extractLog.notice("[webView] pot= token extracted (\(pot.count) chars) — stored in extractedPoToken")
         }
+        finish(url: url)
     }
 
     private func finish(url: URL?) {
@@ -477,7 +483,7 @@ public final class YouTubeWebViewHLSExtractor: NSObject {
 
         guard let url, let pendingContinuation else {
             // Either nil URL (timeout/error) or already resumed — just clean up.
-            pendingContinuation?.resume(returning: Optional<URL>.none)
+            pendingContinuation?.resume(returning: URL?.none)
             webView?.navigationDelegate = nil
             webView?.stopLoading()
             webView?.configuration.userContentController.removeAllScriptMessageHandlers()
@@ -496,7 +502,7 @@ public final class YouTubeWebViewHLSExtractor: NSObject {
         Task { @MainActor [weak self] in
             await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
                 WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
-                    let gvCount = cookies.filter { $0.domain.contains("googlevideo") }.count
+                    let gvCount = cookies.count(where: { $0.domain.contains("googlevideo") })
                     let names = cookies.map { "\($0.name)@\($0.domain)" }.joined(separator: " ")
                     extractLog.notice("⚠️ [webView] syncing \(cookies.count) cookies (\(gvCount) googlevideo): \(names as NSString)")
                     for cookie in cookies {
@@ -506,10 +512,10 @@ public final class YouTubeWebViewHLSExtractor: NSObject {
                 }
             }
             guard let self else { return }
-            self.webView?.navigationDelegate = nil
-            self.webView?.stopLoading()
-            self.webView?.configuration.userContentController.removeAllScriptMessageHandlers()
-            self.webView = nil
+            webView?.navigationDelegate = nil
+            webView?.stopLoading()
+            webView?.configuration.userContentController.removeAllScriptMessageHandlers()
+            webView = nil
             pendingContinuation.resume(returning: capturedURL)
         }
     }
@@ -518,8 +524,10 @@ public final class YouTubeWebViewHLSExtractor: NSObject {
 // MARK: - WKScriptMessageHandler
 
 extension YouTubeWebViewHLSExtractor: WKScriptMessageHandler {
-    public func userContentController(_ userContentController: WKUserContentController,
-                                didReceive message: WKScriptMessage) {
+    public func userContentController(
+        _: WKUserContentController,
+        didReceive message: WKScriptMessage
+    ) {
         guard message.name == "hlsExtractor" else { return }
 
         // Message is now a JSON object: { hlsManifestUrl, poToken, source, unsolvedN, solvedN }
@@ -533,7 +541,8 @@ extension YouTubeWebViewHLSExtractor: WKScriptMessageHandler {
         if let body = message.body as? String {
             // Try to parse as JSON first (new format)
             if let data = body.data(using: .utf8),
-               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            {
                 hlsURLString = json["hlsManifestUrl"] as? String
                 poToken = json["poToken"] as? String
                 urlSource = (json["source"] as? String) ?? "unknown"
@@ -548,7 +557,8 @@ extension YouTubeWebViewHLSExtractor: WKScriptMessageHandler {
 
         guard let urlString = hlsURLString,
               let url = URL(string: urlString),
-              urlString.contains("googlevideo.com") || urlString.contains("manifest") else {
+              urlString.contains("googlevideo.com") || urlString.contains("manifest")
+        else {
             return
         }
 
@@ -564,20 +574,20 @@ extension YouTubeWebViewHLSExtractor: WKScriptMessageHandler {
 
         // JS solver was not available — try solving on the Swift side via JSC.
         if let playerID = playerIDValue, let unsolvedN = unsolvedNValue, !unsolvedN.isEmpty {
-                extractLog.notice("⚠️ [webView] JS solver unavailable; launching JSC solver for playerID=\(playerID as NSString) n=\(unsolvedN as NSString)")
-            let capturedURL    = url
+            extractLog.notice("⚠️ [webView] JS solver unavailable; launching JSC solver for playerID=\(playerID as NSString) n=\(unsolvedN as NSString)")
+            let capturedURL = url
             let capturedPoToken = poToken
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let solved = await YouTubeJSResolver.shared.solveN(playerID: playerID, n: unsolvedN)
                 if let s = solved, !s.isEmpty, s != unsolvedN {
-                    self.extractedNSolver = (unsolved: unsolvedN, solved: s)
+                    extractedNSolver = (unsolved: unsolvedN, solved: s)
                     extractLog.notice("✅ [webView] n solved via JSC: \(unsolvedN as NSString) → \(s as NSString)")
                 } else {
-                    self.extractedNSolver = nil
+                    extractedNSolver = nil
                     extractLog.notice("⚠️ [webView] JSC solver returned nil/same for n=\(unsolvedN as NSString)")
                 }
-                self.finishWithURL(capturedURL, poToken: capturedPoToken)
+                finishWithURL(capturedURL, poToken: capturedPoToken)
             }
             return
         }
@@ -597,19 +607,22 @@ extension YouTubeWebViewHLSExtractor: WKScriptMessageHandler {
 // MARK: - WKNavigationDelegate
 
 extension YouTubeWebViewHLSExtractor: WKNavigationDelegate {
-
-    public func webView(_ webView: WKWebView,
-                 didFail navigation: WKNavigation!,
-                 withError error: Error) {
+    public func webView(
+        _: WKWebView,
+        didFail _: WKNavigation!,
+        withError error: Error
+    ) {
         extractLog.error("❌ [webView] navigation failed: \(error.localizedDescription as NSString)")
-        finish(url: Optional<URL>.none)
+        finish(url: URL?.none)
     }
 
-    public func webView(_ webView: WKWebView,
-                 didFailProvisionalNavigation navigation: WKNavigation!,
-                 withError error: Error) {
+    public func webView(
+        _: WKWebView,
+        didFailProvisionalNavigation _: WKNavigation!,
+        withError error: Error
+    ) {
         extractLog.error("❌ [webView] provisional navigation failed: \(error.localizedDescription as NSString)")
-        finish(url: Optional<URL>.none)
+        finish(url: URL?.none)
     }
 }
 

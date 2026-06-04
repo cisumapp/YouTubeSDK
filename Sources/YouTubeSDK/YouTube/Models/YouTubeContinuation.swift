@@ -10,7 +10,7 @@ import Foundation
 public struct YouTubeContinuation<T: Sendable>: Sendable {
     public let items: [T]
     public let continuationToken: String?
-    
+
     public init(items: [T], continuationToken: String?) {
         self.items = items
         self.continuationToken = continuationToken

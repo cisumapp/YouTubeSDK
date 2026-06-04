@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - Duration formatting
+
 //
 // Single source of truth for H:MM:SS / M:SS time formatting used by
 // InternalVideo.formattedDuration and PlayerView's progress display.

@@ -5,13 +5,12 @@
 //  SwiftUI sheet for OAuth Device Authorization Grant flow.
 //
 
-import SwiftUI
 import SafariServices
+import SwiftUI
 
 #if os(iOS) || os(macOS)
 
 public struct YouTubeOAuthDeviceFlowView: View {
-
     public var onSuccess: (OAuthToken) -> Void
     public var onCancel: () -> Void
 
@@ -29,9 +28,9 @@ public struct YouTubeOAuthDeviceFlowView: View {
         NavigationStack {
             content
                 .navigationTitle("Sign in to YouTube")
-                #if os(iOS)
+            #if os(iOS)
                 .navigationBarTitleDisplayMode(.inline)
-                #endif
+            #endif
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Cancel") {
@@ -57,7 +56,7 @@ public struct YouTubeOAuthDeviceFlowView: View {
             ProgressView("Starting authentication...")
                 .padding()
 
-        case .codeReceived(let response):
+        case let .codeReceived(response):
             VStack(spacing: 32) {
                 codeSection(response)
                 instructionsSection(response)
@@ -65,7 +64,7 @@ public struct YouTubeOAuthDeviceFlowView: View {
             }
             .padding(24)
 
-        case .error(let message):
+        case let .error(message):
             VStack(spacing: 16) {
                 Image(systemName: "exclamationmark.triangle")
                     .font(.largeTitle)
@@ -87,7 +86,6 @@ public struct YouTubeOAuthDeviceFlowView: View {
 
     // MARK: - Subviews
 
-    @ViewBuilder
     private func codeSection(_ response: DeviceCodeResponse) -> some View {
         VStack(spacing: 12) {
             Text("Enter this code:")
@@ -100,11 +98,11 @@ public struct YouTubeOAuthDeviceFlowView: View {
                 .padding(.vertical, 16)
                 .background(
                     RoundedRectangle(cornerRadius: 12)
-                        #if os(iOS)
+                    #if os(iOS)
                         .fill(Color(uiColor: .systemGray5))
-                        #else
+                    #else
                         .fill(Color(nsColor: .systemGray))
-                        #endif
+                    #endif
                 )
 
             Text("Code expires in \(response.expiresIn / 60) minutes")
@@ -113,7 +111,6 @@ public struct YouTubeOAuthDeviceFlowView: View {
         }
     }
 
-    @ViewBuilder
     private func instructionsSection(_ response: DeviceCodeResponse) -> some View {
         VStack(spacing: 16) {
             #if os(iOS)
@@ -160,7 +157,6 @@ public struct YouTubeOAuthDeviceFlowView: View {
         }
     }
 
-    @ViewBuilder
     private var statusSection: some View {
         HStack(spacing: 12) {
             ProgressView()
@@ -233,7 +229,7 @@ private struct SafariAuthView: UIViewControllerRepresentable {
         return safari
     }
 
-    func updateUIViewController(_ uiViewController: SFSafariViewController, context: UIViewControllerRepresentableContext<SafariAuthView>) {}
+    func updateUIViewController(_: SFSafariViewController, context _: UIViewControllerRepresentableContext<SafariAuthView>) {}
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onClosed: onClosed)
@@ -246,7 +242,7 @@ private struct SafariAuthView: UIViewControllerRepresentable {
             self.onClosed = onClosed
         }
 
-        func safariViewControllerDidClose(_ controller: SFSafariViewController) {
+        func safariViewControllerDidClose(_: SFSafariViewController) {
             onClosed()
         }
     }

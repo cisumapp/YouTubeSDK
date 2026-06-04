@@ -41,7 +41,6 @@ public enum OAuthKeychainKey {
 
 /// Stores and retrieves OAuthToken from Keychain.
 public enum OAuthTokenStorage {
-
     public static func save(_ token: OAuthToken) {
         guard let data = try? JSONEncoder().encode(token) else { return }
         let string = data.base64EncodedString()
@@ -51,7 +50,8 @@ public enum OAuthTokenStorage {
     public static func load() -> OAuthToken? {
         guard let string = Keychain.load(key: OAuthKeychainKey.token),
               let data = Data(base64Encoded: string),
-              let token = try? JSONDecoder().decode(OAuthToken.self, from: data) else {
+              let token = try? JSONDecoder().decode(OAuthToken.self, from: data)
+        else {
             return nil
         }
         return token
@@ -75,7 +75,8 @@ public enum OAuthTokenStorage {
         guard let userCode = Keychain.load(key: OAuthKeychainKey.userCode),
               let deviceCode = Keychain.load(key: OAuthKeychainKey.deviceCode),
               let expiryString = Keychain.load(key: OAuthKeychainKey.codeExpiresAt),
-              let expiryTimestamp = Double(expiryString) else {
+              let expiryTimestamp = Double(expiryString)
+        else {
             return nil
         }
         return (userCode, deviceCode, Date(timeIntervalSince1970: expiryTimestamp))

@@ -8,47 +8,82 @@ private let tubeLog = Logger(subsystem: appSubsystem, category: "InnerTube")
 
 // MARK: - Player endpoints and playback tracking
 
-extension InnerTubeAPI {
-
+public extension InnerTubeAPI {
     // MARK: - Player stream URLs
 
     /// Smart player info resolver that tries multiple clients in sequence until a playable
     /// HLS manifest or high-quality adaptive stream is found.
     /// Prefers HLS manifests as they are natively supported by AVPlayer without additional
     /// signature/PO-token handling at the application layer.
-    public func fetchPlayerInfoSmart(videoId: String) async throws -> PlayerInfo {
+    func fetchPlayerInfoSmart(videoId: String) async throws -> PlayerInfo {
+        let startTime = Date()
         var errors: [Error] = []
 
         // Pre-fetch signatureTimestamp and playerID from homepage (cached for 1hr).
         // The playerID is required for n-descrambling; without it, all clients fail at the CDN.
         _ = await fetchSignatureTimestampIfNeeded()
 
-        // 1. Try iOS Authenticated
-        // (Best quality, includes HLS, requires sign-in for full benefit)
-        if authToken != nil {
-            do {
-                let info = try await fetchPlayerInfoiOSAuthenticated(videoId: videoId)
-                if info.hlsURL != nil {
-                    tubeLog.notice("fetchPlayerInfoSmart: ✅ iOS-Auth hit for \(videoId, privacy: .public)")
-                    return info
+        // 1. Try iOS Authenticated + WebSafari in parallel (highest-value clients).
+        //    The first to return HLS wins. This saves ~500-1000ms vs sequential probing.
+        tubeLog.notice("fetchPlayerInfoSmart: racing iOS-Auth + WebSafari for \(videoId, privacy: .public)")
+        let (iosResult, webResult): (PlayerInfo?, PlayerInfo?) = await withTaskGroup(
+            of: (Bool, PlayerInfo?).self,
+            returning: (PlayerInfo?, PlayerInfo?).self
+        ) { group in
+            if authToken != nil {
+                group.addTask {
+                    do {
+                        let info = try await self.fetchPlayerInfoiOSAuthenticated(videoId: videoId)
+                        return (true, info)
+                    } catch {
+                        tubeLog.error("fetchPlayerInfoSmart: iOS-Auth failed — \(error, privacy: .public)")
+                        return (true, nil)
+                    }
                 }
-            } catch {
-                tubeLog.error("fetchPlayerInfoSmart: iOS-Auth failed — \(error, privacy: .public)")
-                errors.append(error)
             }
+            group.addTask {
+                do {
+                    let info = try await self.fetchPlayerInfoWebSafari(videoId: videoId)
+                    return (false, info)
+                } catch {
+                    tubeLog.error("fetchPlayerInfoSmart: WebSafari failed — \(error, privacy: .public)")
+                    return (false, nil)
+                }
+            }
+
+            var iosOut: PlayerInfo?
+            var webOut: PlayerInfo?
+            for await (isIOS, info) in group {
+                if let info, info.hlsURL != nil {
+                    let label = isIOS ? "iOS-Auth" : "WebSafari"
+                    tubeLog.notice("fetchPlayerInfoSmart: ✅ \(label, privacy: .public) hit for \(videoId, privacy: .public)")
+                    // Cancel remaining tasks by returning early — structured concurrency
+                    // will cancel pending group tasks when we return.
+                    if isIOS { iosOut = info } else { webOut = info }
+                    return (iosOut, webOut)
+                }
+                if isIOS { iosOut = info } else { webOut = info }
+            }
+            return (iosOut, webOut)
         }
 
-        // 2. Try Web Safari
-        // (Most reliable unauthenticated HLS source for all video types)
-        do {
-            let info = try await fetchPlayerInfoWebSafari(videoId: videoId)
-            if info.hlsURL != nil {
-                tubeLog.notice("fetchPlayerInfoSmart: ✅ WebSafari hit for \(videoId, privacy: .public)")
-                return info
-            }
-        } catch {
-            tubeLog.error("fetchPlayerInfoSmart: WebSafari failed — \(error, privacy: .public)")
-            errors.append(error)
+        // Collect the best result from the parallel race (prefer HLS)
+        if let webResult, webResult.hlsURL != nil {
+            tubeLog.notice("fetchPlayerInfoSmart: ✅ WebSafari (post-race) hit for \(videoId, privacy: .public)")
+            return webResult
+        }
+        if let iosResult, iosResult.hlsURL != nil {
+            tubeLog.notice("fetchPlayerInfoSmart: ✅ iOS-Auth (post-race) hit for \(videoId, privacy: .public)")
+            return iosResult
+        }
+        // If neither returned HLS but one has formats, prefer that
+        if let webResult, !webResult.formats.isEmpty {
+            tubeLog.notice("fetchPlayerInfoSmart: ✅ WebSafari (formats) hit for \(videoId, privacy: .public)")
+            return webResult
+        }
+        if let iosResult, !iosResult.formats.isEmpty {
+            tubeLog.notice("fetchPlayerInfoSmart: ✅ iOS-Auth (formats) hit for \(videoId, privacy: .public)")
+            return iosResult
         }
 
         // 3. Try promising unauthenticated clients in parallel
@@ -58,7 +93,7 @@ extension InnerTubeAPI {
             group.addTask { try? await self.fetchPlayerInfoTVEmbedded(videoId: videoId) }
             group.addTask { try? await self.fetchPlayerInfoMWEB(videoId: videoId) }
             group.addTask { try? await self.fetchPlayerInfoAndroidVR(videoId: videoId) }
-            
+
             for await info in group {
                 if let info, info.hlsURL != nil {
                     return info as PlayerInfo?
@@ -124,24 +159,89 @@ extension InnerTubeAPI {
         }
 
         // Final fallback: standard iOS unauthenticated
-        tubeLog.notice("fetchPlayerInfoSmart: All high-quality clients failed, using standard iOS fallback for \(videoId, privacy: .public)")
+        let elapsed = Date().timeIntervalSince(startTime)
+        tubeLog.notice("fetchPlayerInfoSmart: All high-quality clients failed (\(String(format: "%.2f", elapsed))s), using standard iOS fallback for \(videoId, privacy: .public)")
         return try await fetchPlayerInfo(videoId: videoId)
     }
 
-    public func fetchPlayerInfo(videoId: String) async throws -> PlayerInfo {
-        var body = makeBody(client: iosClientContext)
+    func fetchPlayerInfo(videoId: String) async throws -> PlayerInfo {
+        // Include serviceIntegrityDimensions.poToken in the request body when a token
+        // is stored — this tells YouTube's backend the request is pot-authenticated so
+        // the returned stream URLs can be accessed by the CDN with &pot= validation.
+        let hasPot = poToken != nil && poTokenVideoId == videoId
+        var body = makeBody(client: iosClientContext, includePoToken: hasPot)
         body["videoId"] = videoId
         body["racyCheckOk"] = true
         body["contentCheckOk"] = true
         let data = try await postPlayer(body: body)
-        return try await parsePlayerInfo(from: data, videoId: videoId)
+        var info = try await parsePlayerInfo(from: data, videoId: videoId)
+        // Apply a WKWebView-extracted pot= token (Option B) when available.
+        // The token is stored by storeExternalPoToken() after the hidden WKWebView
+        // extracts it from the YouTube player's /player API request body.
+        if hasPot, let pot = poToken {
+            tubeLog.notice("[InnerTube] ✅ poToken applied to \(videoId, privacy: .public) via iOS client (len=\(pot.count))")
+            info = info.applyingPoToken(pot)
+        }
+        return info
+    }
+
+    /// Fetches player info using the WebSafari client with `serviceIntegrityDimensions.poToken`
+    /// and the WKWebView's WEB session `visitorData` in the client context.
+    ///
+    /// Uses `postWebSafari` (not the generic `post()`) because the WebSafari POST method
+    /// sends a proper Safari browser User-Agent and `X-Goog-Visitor-Id` header — without
+    /// these, YouTube returns `playabilityStatus: "ERROR"` ("Video unavailable") with no
+    /// `streamingData` for all videos, regardless of content type.
+    ///
+    /// This mirrors yt-dlp's `web_safari` client approach for BotGuard token delivery:
+    /// pot= token in `serviceIntegrityDimensions`, visitorData in `context.client`,
+    /// html5Preference + signatureTimestamp in `playbackContext`.
+    ///
+    /// Returns a `PlayerInfo` with `&pot=<token>` appended to all format URLs.
+    func fetchPlayerInfoWebWithPoToken(videoId: String, visitorData webVD: String?) async throws -> PlayerInfo {
+        let hasPot = poToken != nil && poTokenVideoId == videoId
+
+        // Inject the WKWebView's WEB session visitorData into context.client so
+        // YouTube can validate the minted pot= token against the correct session.
+        // Fall back to the API's own visitorData when webVD is not available.
+        var clientFields = (webSafariClientContext["client"] as? [String: Any]) ?? [:]
+        let apiVD = visitorData ?? ""
+        tubeLog.notice("[InnerTube] fetchPlayerInfoWebWithPoToken: apiVD.len=\(apiVD.count) webVD.len=\(webVD?.count ?? 0) match=\(apiVD == (webVD ?? ""))")
+        if let vd = webVD, !vd.isEmpty {
+            clientFields["visitorData"] = vd
+        } else if let vd = visitorData {
+            clientFields["visitorData"] = vd
+        }
+
+        let sts = await fetchSignatureTimestampIfNeeded()
+        var cpbc: [String: Any] = ["html5Preference": "HTML5_PREF_WANTS"]
+        if let sts { cpbc["signatureTimestamp"] = sts }
+
+        var body = makeBody(client: ["client": clientFields], includePoToken: hasPot)
+        body["videoId"] = videoId
+        body["racyCheckOk"] = true
+        body["contentCheckOk"] = true
+        body["playbackContext"] = ["contentPlaybackContext": cpbc]
+
+        // Pass webVD as X-Goog-Visitor-Id override: ensures the visitor ID in the header
+        // matches context.client.visitorData in the body and the minted pot= token identifier.
+        // Without this, postWebSafari sends api.visitorData (iOS session) in the header
+        // while the body has webVD (WEB session) — YouTube would tie CDN URLs to the iOS
+        // session but our token is minted for the WEB session → CDN validation fails (403).
+        let data = try await postWebSafari(body: body, visitorIdOverride: webVD)
+        var info = try await parsePlayerInfo(from: data, videoId: videoId)
+        if hasPot, let pot = poToken {
+            tubeLog.notice("[InnerTube] ✅ poToken applied to \(videoId, privacy: .public) via WebSafari+pot client (len=\(pot.count))")
+            info = info.applyingPoToken(pot)
+        }
+        return info
     }
 
     /// Fetches player info using the Web client, which returns muxed (video+audio)
     /// MP4 streams suitable for direct file download and saving to Photos.
     /// The iOS client only returns adaptive-only streams; the Web client includes
     /// itag 18 (360p muxed) and itag 22 (720p muxed) in the `formats` array.
-    public func fetchPlayerInfoForDownload(videoId: String) async throws -> PlayerInfo {
+    func fetchPlayerInfoForDownload(videoId: String) async throws -> PlayerInfo {
         var body = makeBody(client: webClientContext)
         body["videoId"] = videoId
         body["racyCheckOk"] = true
@@ -154,7 +254,7 @@ extension InnerTubeAPI {
     /// Used as the primary download fallback: Android CDN URLs are signed with
     /// `c=ANDROID` and are reliably downloadable with a standard Android UA.
     /// Unlike TVHTML5-signed URLs, these do not require session cookies.
-    public func fetchPlayerInfoAndroid(videoId: String) async throws -> PlayerInfo {
+    func fetchPlayerInfoAndroid(videoId: String) async throws -> PlayerInfo {
         var body = makeBody(client: androidClientContext)
         body["videoId"] = videoId
         body["racyCheckOk"] = true
@@ -170,7 +270,7 @@ extension InnerTubeAPI {
     /// when the request includes `html5Preference: HTML5_PREF_WANTS` — yt-dlp injects
     /// this via `_generate_player_context` for ALL clients. Without it, YouTube returns
     /// `serverAbrStreamingUrl` (SABR only, not AVPlayer-compatible).
-    public func fetchPlayerInfoAndroidVR(videoId: String) async throws -> PlayerInfo {
+    func fetchPlayerInfoAndroidVR(videoId: String) async throws -> PlayerInfo {
         // Mirror yt-dlp's _generate_player_context: send html5Preference for all clients.
         // Also inject visitorData so YouTube session resolution works (matches yt-dlp's
         // X-Goog-Visitor-Id header → client visitorData field).
@@ -194,7 +294,7 @@ extension InnerTubeAPI {
 
     /// TVHTML5_SIMPLY_EMBEDDED client (ClientNameID 85)
     /// Used by SmartTubeIOS for reliable unauthenticated HLS streaming.
-    public func fetchPlayerInfoTVEmbeddedSimply(videoId: String) async throws -> PlayerInfo {
+    func fetchPlayerInfoTVEmbeddedSimply(videoId: String) async throws -> PlayerInfo {
         var body = makeBody(client: tvEmbeddedSimplyContext)
         body["videoId"] = videoId
         body["racyCheckOk"] = true
@@ -202,15 +302,15 @@ extension InnerTubeAPI {
         body["playbackContext"] = [
             "contentPlaybackContext": [
                 "html5Preference": "HTML5_PREF_WANTS",
-                "signatureTimestamp": signatureTimestamp ?? 0
-            ]
+                "signatureTimestamp": signatureTimestamp ?? 0,
+            ],
         ]
         let data = try await postTVSimply(endpoint: "player", body: body)
         return try await parsePlayerInfo(from: data, videoId: videoId)
     }
 
     private func postTVSimply(endpoint: String, body: [String: Any]) async throws -> [String: Any] {
-        return try await post(
+        try await post(
             endpoint: endpoint,
             body: body,
             headers: [
@@ -218,7 +318,7 @@ extension InnerTubeAPI {
                 "X-YouTube-Client-Version": InnerTubeClients.TVEmbeddedSimply.version,
                 "User-Agent": InnerTubeClients.TVEmbeddedSimply.userAgent,
                 "Origin": "https://www.youtube.com",
-                "Referer": "https://www.youtube.com/tv"
+                "Referer": "https://www.youtube.com/tv",
             ]
         )
     }
@@ -226,14 +326,14 @@ extension InnerTubeAPI {
     /// Fetches player info using the WEB_EMBEDDED_PLAYER client (nameID=56).
     /// Returns an HLS manifest for most embeddable videos without requiring a PO token.
     /// `thirdParty.embedUrl` is required — without it YouTube returns "no longer supported".
-    public func fetchPlayerInfoTVEmbedded(videoId: String) async throws -> PlayerInfo {
+    func fetchPlayerInfoTVEmbedded(videoId: String) async throws -> PlayerInfo {
         var body = makeBody(client: tvEmbeddedClientContext)
         body["videoId"] = videoId
         body["racyCheckOk"] = true
         body["contentCheckOk"] = true
         // thirdParty.embedUrl: required by WEB_EMBEDDED_PLAYER to prove legitimate embed.
         body["thirdParty"] = [
-            "embedUrl": "https://www.youtube.com/embed/\(videoId)"
+            "embedUrl": "https://www.youtube.com/embed/\(videoId)",
         ]
         var comps = URLComponents(string: "https://www.youtube.com/watch")!
         comps.queryItems = [URLQueryItem(name: "v", value: videoId)]
@@ -242,7 +342,7 @@ extension InnerTubeAPI {
             "contentPlaybackContext": [
                 "referer": referer,
                 "html5Preference": "HTML5_PREF_WANTS",
-            ]
+            ],
         ]
         let data = try await postTVEmbedded(body: body)
         return try await parsePlayerInfo(from: data, videoId: videoId)
@@ -253,7 +353,7 @@ extension InnerTubeAPI {
     /// non-embeddable videos where all other clients return only `serverAbrStreamingUrl`.
     /// The Safari UA is the key differentiator — nameID=1 with Chrome UA does not return
     /// HLS manifest. HLS segments from manifest.googlevideo.com do not require pot= tokens.
-    public func fetchPlayerInfoWebSafari(videoId: String) async throws -> PlayerInfo {
+    func fetchPlayerInfoWebSafari(videoId: String) async throws -> PlayerInfo {
         let sts = await fetchSignatureTimestampIfNeeded()
         var cpbc: [String: Any] = ["html5Preference": "HTML5_PREF_WANTS"]
         if let sts { cpbc["signatureTimestamp"] = sts }
@@ -271,7 +371,7 @@ extension InnerTubeAPI {
     /// Mirrors the TVAuth request pattern: injects html5Preference + signatureTimestamp +
     /// visitorData + Bearer auth so YouTube returns `streamingData` rather than
     /// "The page needs to be reloaded" (the same fix that unlocked the TV auth client).
-    public func fetchPlayerInfoMWEB(videoId: String) async throws -> PlayerInfo {
+    func fetchPlayerInfoMWEB(videoId: String) async throws -> PlayerInfo {
         var clientFields = (mwebClientContext["client"] as? [String: Any]) ?? [:]
         if let vd = visitorData { clientFields["visitorData"] = vd }
 
@@ -295,7 +395,7 @@ extension InnerTubeAPI {
     /// Requires a signed-in session (Bearer auth injected by postWebCreator). Without
     /// auth, YouTube returns signInRequired and omits streamingData entirely.
     /// Used in `exhaustiveRetry` as a fallback before the muxed-only phase.
-    public func fetchPlayerInfoWebCreator(videoId: String) async throws -> PlayerInfo {
+    func fetchPlayerInfoWebCreator(videoId: String) async throws -> PlayerInfo {
         // Inject visitorData so YouTube's session resolution works correctly.
         var clientFields = (webCreatorClientContext["client"] as? [String: Any]) ?? [:]
         if let vd = visitorData { clientFields["visitorData"] = vd }
@@ -320,7 +420,7 @@ extension InnerTubeAPI {
     /// For authenticated users, adaptive stream URLs from the WEB client do not carry
     /// `rqh=1` CDN enforcement, making this the primary authenticated adaptive path.
     /// Throws `APIError.notAuthenticated` when no auth token is present.
-    public func fetchPlayerInfoWebAuthenticated(videoId: String) async throws -> PlayerInfo {
+    func fetchPlayerInfoWebAuthenticated(videoId: String) async throws -> PlayerInfo {
         let sts = await fetchSignatureTimestampIfNeeded()
         var cpbc: [String: Any] = ["html5Preference": "HTML5_PREF_WANTS"]
         if let sts { cpbc["signatureTimestamp"] = sts }
@@ -340,21 +440,21 @@ extension InnerTubeAPI {
     /// (e.g. embed-disabled or account-restricted content). Adding a Bearer auth token
     /// may cause YouTube to return an HLS manifest and adaptive streams without `rqh=1`.
     /// Falls back to `fetchPlayerInfo` (unauthenticated) when no auth token is stored.
-    public func fetchPlayerInfoiOSAuthenticated(videoId: String) async throws -> PlayerInfo {
+    func fetchPlayerInfoiOSAuthenticated(videoId: String) async throws -> PlayerInfo {
         var body = makeBody(client: iosClientContext, includePoToken: true)
         body["videoId"] = videoId
         body["racyCheckOk"] = true
         body["contentCheckOk"] = true
         let data = try await postPlayerAuthenticated(body: body)
         var info = try await parsePlayerInfo(from: data, videoId: videoId)
-        if let pot = poToken, poTokenInternalVideoId == videoId {
+        if let pot = poToken, poTokenVideoId == videoId {
             tubeLog.notice("[InnerTube] ✅ poToken applied to \(videoId, privacy: .public) via iOS-auth client (len=\(pot.count))")
             info = info.applyingPoToken(pot)
         }
         return info
     }
 
-    public func fetchPlayerInfoAuthenticated(videoId: String) async throws -> PlayerInfo {
+    func fetchPlayerInfoAuthenticated(videoId: String) async throws -> PlayerInfo {
         // Build a TV client context that includes visitorData when available.
         // YouTube's TV auth endpoint needs visitorData inside context.client to correctly
         // identify the session; without it, sign-in-required or region-gated videos return
@@ -393,7 +493,8 @@ extension InnerTubeAPI {
         // AVAssetResourceLoader without BotGuard/pot= tokens.
         if let sabrStr = (firstData["streamingData"] as? [String: Any])?["serverAbrStreamingUrl"] as? String,
            let sabrURL = URL(string: sabrStr),
-           let bearerToken = authToken {
+           let bearerToken = authToken
+        {
             tubeLog.notice("D-16 SABR URL (first 200): \(sabrStr.prefix(200), privacy: .public)")
             let capturedToken = bearerToken
             Task.detached {
@@ -402,7 +503,8 @@ extension InnerTubeAPI {
                 req.setValue(InnerTubeClients.TV.userAgent, forHTTPHeaderField: "User-Agent")
                 req.timeoutInterval = 8
                 if let (data, resp) = try? await URLSession(configuration: .ephemeral).data(for: req),
-                   let http = resp as? HTTPURLResponse {
+                   let http = resp as? HTTPURLResponse
+                {
                     let ct = http.value(forHTTPHeaderField: "Content-Type") ?? "?"
                     let preview = String(data: data.prefix(300), encoding: .utf8) ?? "(binary \(data.count) bytes)"
                     tubeLog.notice("D-16 SABR GET Bearer: HTTP \(http.statusCode, privacy: .public) ct=\(ct, privacy: .public) body_preview=\(preview.prefix(200), privacy: .public)")
@@ -418,7 +520,8 @@ extension InnerTubeAPI {
         // switch succeeds without waiting 60+ s for background browse calls to populate it.
         if !hadVisitorData,
            let rc = firstData["responseContext"] as? [String: Any],
-           let newVD = rc["visitorData"] as? String, !newVD.isEmpty {
+           let newVD = rc["visitorData"] as? String, !newVD.isEmpty
+        {
             tubeLog.notice("TVAuth: seeded visitorData from player response — retrying")
             visitorData = newVD
             var retryFields = (tvClientContext["client"] as? [String: Any]) ?? [:]
@@ -433,7 +536,7 @@ extension InnerTubeAPI {
     /// Fetches end-screen cards for a video using the Web client.
     /// The iOS player client typically omits `endscreen` data; the Web client reliably includes it.
     /// Returns an empty array if no end cards are available or the request fails.
-    public func fetchEndCards(videoId: String) async throws -> [EndCard] {
+    func fetchEndCards(videoId: String) async throws -> [EndCard] {
         var body = makeBody(client: webClientContext)
         body["videoId"] = videoId
         body["racyCheckOk"] = true
@@ -449,10 +552,10 @@ extension InnerTubeAPI {
     /// Generates a Client Playback Nonce (CPN) — a random 16-character base64url string.
     /// YouTube uses this to attribute a view to an account and record it in watch history.
     /// Must be generated once per playback session and used in every tracking ping.
-    public static func generateCPN() -> String {
+    static func generateCPN() -> String {
         let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
         let chars = Array(alphabet)
-        return String((0..<16).map { _ in chars[Int.random(in: 0..<chars.count)] })
+        return String((0 ..< 16).map { _ in chars[Int.random(in: 0 ..< chars.count)] })
     }
 
     /// Fires `videostatsPlaybackUrl` to record the video start in the user's YouTube watch history.
@@ -462,13 +565,13 @@ extension InnerTubeAPI {
     ///   - videoId: The YouTube video ID being watched.
     ///   - cpn: The Client Playback Nonce for this session (see `generateCPN()`).
     ///   - trackingURLs: Tracking URLs from the player response; if nil, falls back to constructed URLs.
-    public func reportPlaybackStarted(videoId: String, cpn: String, trackingURLs: PlaybackTrackingURLs?) async {
+    func reportPlaybackStarted(videoId: String, cpn: String, trackingURLs: PlaybackTrackingURLs?) async {
         let url = trackingURLs?.playbackURL ?? Self.fallbackPlaybackURL(videoId: videoId)
         let extraParams: [String: String] = [
-            "ver":   "2",
-            "cpn":   cpn,
+            "ver": "2",
+            "cpn": cpn,
             "docid": videoId,
-            "cmt":   "0",
+            "cmt": "0",
         ]
         await pingTrackingURL(url, extraParams: extraParams)
         tubeLog.notice("reportPlaybackStarted: videoId=\(videoId, privacy: .public) cpn=\(cpn.prefix(4), privacy: .public)… usedFallback=\(trackingURLs == nil, privacy: .public)")
@@ -482,7 +585,7 @@ extension InnerTubeAPI {
     ///   - trackingURLs: Tracking URLs from the player response; if nil, falls back to constructed URLs.
     ///   - segmentStart: Playhead position (seconds) when the current play segment began.
     ///   - segmentEnd: Playhead position (seconds) when the current play segment ended (i.e. now).
-    public func reportWatchtime(
+    func reportWatchtime(
         videoId: String,
         cpn: String,
         trackingURLs: PlaybackTrackingURLs?,
@@ -491,12 +594,12 @@ extension InnerTubeAPI {
     ) async {
         let url = trackingURLs?.watchtimeURL ?? Self.fallbackWatchtimeURL(videoId: videoId)
         let extraParams: [String: String] = [
-            "ver":   "2",
-            "cpn":   cpn,
+            "ver": "2",
+            "cpn": cpn,
             "docid": videoId,
-            "cmt":   String(format: "%.3f", segmentEnd),
-            "st":    String(format: "%.3f", segmentStart),
-            "et":    String(format: "%.3f", segmentEnd),
+            "cmt": String(format: "%.3f", segmentEnd),
+            "st": String(format: "%.3f", segmentStart),
+            "et": String(format: "%.3f", segmentEnd),
         ]
         await pingTrackingURL(url, extraParams: extraParams)
         tubeLog.notice("reportWatchtime: videoId=\(videoId, privacy: .public) st=\(Int(segmentStart))s et=\(Int(segmentEnd))s")
@@ -509,7 +612,7 @@ extension InnerTubeAPI {
     /// signed-in account server-side — pinging those URLs records the view in watch history.
     ///
     /// Called in parallel with the primary iOS player fetch; only the tracking URLs are kept.
-    public func fetchAuthenticatedTrackingURLs(videoId: String) async -> PlaybackTrackingURLs? {
+    func fetchAuthenticatedTrackingURLs(videoId: String) async -> PlaybackTrackingURLs? {
         guard authToken != nil else { return nil }
         do {
             var body = makeBody(client: tvClientContext)
@@ -518,11 +621,11 @@ extension InnerTubeAPI {
             body["contentCheckOk"] = true
             let data = try await postTV(endpoint: "player", body: body)
             guard
-                let tracking  = data["playbackTracking"] as? [String: Any],
-                let pbStr      = (tracking["videostatsPlaybackUrl"]  as? [String: Any])?["baseUrl"] as? String,
-                let wtStr      = (tracking["videostatsWatchtimeUrl"] as? [String: Any])?["baseUrl"] as? String,
-                let pbURL      = URL(string: pbStr),
-                let wtURL      = URL(string: wtStr)
+                let tracking = data["playbackTracking"] as? [String: Any],
+                let pbStr = (tracking["videostatsPlaybackUrl"] as? [String: Any])?["baseUrl"] as? String,
+                let wtStr = (tracking["videostatsWatchtimeUrl"] as? [String: Any])?["baseUrl"] as? String,
+                let pbURL = URL(string: pbStr),
+                let wtURL = URL(string: wtStr)
             else {
                 tubeLog.notice("fetchAuthenticatedTrackingURLs: no tracking data in TV player response for \(videoId, privacy: .public)")
                 return nil
@@ -539,7 +642,7 @@ extension InnerTubeAPI {
     /// instead of reading `self.authToken`. Use this when the caller holds the token but cannot
     /// guarantee that `setAuthToken` has already propagated to the actor (e.g. prefetch tasks
     /// that start before `PlaybackViewModel.updateAuthToken` has had a chance to run).
-    public func fetchAuthenticatedTrackingURLs(videoId: String, usingToken token: String) async -> PlaybackTrackingURLs? {
+    func fetchAuthenticatedTrackingURLs(videoId: String, usingToken token: String) async -> PlaybackTrackingURLs? {
         do {
             var body = makeBody(client: tvClientContext)
             body["videoId"] = videoId
@@ -547,11 +650,11 @@ extension InnerTubeAPI {
             body["contentCheckOk"] = true
             let data = try await postTV(endpoint: "player", body: body, explicitBearerToken: token)
             guard
-                let tracking  = data["playbackTracking"] as? [String: Any],
-                let pbStr      = (tracking["videostatsPlaybackUrl"]  as? [String: Any])?["baseUrl"] as? String,
-                let wtStr      = (tracking["videostatsWatchtimeUrl"] as? [String: Any])?["baseUrl"] as? String,
-                let pbURL      = URL(string: pbStr),
-                let wtURL      = URL(string: wtStr)
+                let tracking = data["playbackTracking"] as? [String: Any],
+                let pbStr = (tracking["videostatsPlaybackUrl"] as? [String: Any])?["baseUrl"] as? String,
+                let wtStr = (tracking["videostatsWatchtimeUrl"] as? [String: Any])?["baseUrl"] as? String,
+                let pbURL = URL(string: pbStr),
+                let wtURL = URL(string: wtStr)
             else {
                 tubeLog.notice("fetchAuthenticatedTrackingURLs: no tracking data in TV player response for \(videoId, privacy: .public)")
                 return nil
@@ -567,7 +670,7 @@ extension InnerTubeAPI {
     // MARK: - Private player helpers
 
     private func parsePlayerInfo(from json: [String: Any], videoId: String) async throws -> PlayerInfo {
-        let pid = self.playerID
+        let pid = playerID
         let videoDetails = json["videoDetails"] as? [String: Any]
         let title = videoDetails?["title"] as? String ?? ""
         let channelTitle = videoDetails?["author"] as? String ?? ""
@@ -581,18 +684,18 @@ extension InnerTubeAPI {
 
         // Stream formats
         let streamingData = json["streamingData"] as? [String: Any]
-        let playabilityDict  = json["playabilityStatus"] as? [String: Any]
+        let playabilityDict = json["playabilityStatus"] as? [String: Any]
         let playabilityStatus = playabilityDict?["status"] as? String ?? "unknown"
         let playabilityReason = playabilityDict?["reason"] as? String
             ?? (playabilityDict?["errorScreen"] as? [String: Any])
-                .flatMap { ($0["playerErrorMessageRenderer"] as? [String: Any])?["subreason"] as? [String: Any] }
-                .flatMap { extractText($0) }
+            .flatMap { ($0["playerErrorMessageRenderer"] as? [String: Any])?["subreason"] as? [String: Any] }
+            .flatMap { extractText($0) }
         tubeLog.notice("parsePlayerInfo id=\(videoId, privacy: .public) playability=\(playabilityStatus, privacy: .public) reason=\(playabilityReason ?? "nil", privacy: .public) hasStreamingData=\(streamingData != nil, privacy: .public)")
-        
+
         if streamingData == nil, playabilityStatus != "OK" {
             let reason = playabilityReason ?? "This video is unavailable (\(playabilityStatus))"
             tubeLog.error("❌ parsePlayerInfo: unplayable — \(reason, privacy: .public)")
-            let signInStatuses: Set<String> = ["LOGIN_REQUIRED", "AGE_VERIFICATION_REQUIRED", "AGE_CHECK_REQUIRED"]
+            let signInStatuses: Set = ["LOGIN_REQUIRED", "AGE_VERIFICATION_REQUIRED", "AGE_CHECK_REQUIRED"]
             if signInStatuses.contains(playabilityStatus) {
                 throw APIError.signInRequired
             }
@@ -610,7 +713,7 @@ extension InnerTubeAPI {
 
         var formats: [InternalVideoFormat] = []
 
-        /// Intermediate Sendable struct to hold raw format data for parallel solving.
+        // Intermediate Sendable struct to hold raw format data for parallel solving.
         struct RawFormatData: Sendable {
             let itag: Int
             let urlStr: String?
@@ -687,7 +790,6 @@ extension InnerTubeAPI {
             return results
         }
 
-
         // Log summary of muxed formats for diagnostics
         let muxedParsed = uniqueFormats.filter { $0.mimeType.contains(", ") }
         let summary = muxedParsed.map { "itag=\($0.itag) \($0.label) \($0.url != nil ? "url=yes" : "url=no")" }.joined(separator: "; ")
@@ -697,18 +799,18 @@ extension InnerTubeAPI {
 
         // Handle HLS and DASH manifests (also need n-descramble)
         let hlsURLRaw = (streamingData?["hlsManifestUrl"] as? String).flatMap { URL(string: $0) }
-        let hlsURL: URL?
-        if let h = hlsURLRaw {
-            hlsURL = await YouTubeJSResolver.shared.descrambleURL(h, playerID: pid)
+        let hlsURL: URL? = if let h = hlsURLRaw {
+            await YouTubeJSResolver.shared.descrambleURL(h, playerID: pid)
         } else {
-            hlsURL = nil
+            nil
         }
         let dashURL = (streamingData?["dashManifestUrl"] as? String).flatMap { URL(string: $0) }
 
         // Find the nSolver mapping to pass to the HLS proxy (used for rewriting segment URLs)
         var solvedMapping: (unsolved: String, solved: String)? = nil
         if let firstScrambled = uniqueFormats.first(where: { $0.url != nil }).flatMap({ extractNParam(from: $0.url!) }),
-           let pid {
+           let pid
+        {
             if let solved = await YouTubeJSResolver.shared.solveN(playerID: pid, n: firstScrambled) {
                 solvedMapping = (unsolved: firstScrambled, solved: solved)
                 tubeLog.notice("n-solver mapping found for \(videoId, privacy: .public): \(firstScrambled as NSString) → \(solved as NSString)")
@@ -716,7 +818,7 @@ extension InnerTubeAPI {
         }
 
         // Diagnostics
-        let adaptiveHeights = uniqueFormats.filter { $0.mimeType.hasPrefix("video/") }.map { $0.height }.sorted().reversed()
+        let adaptiveHeights = uniqueFormats.filter { $0.mimeType.hasPrefix("video/") }.map(\.height).sorted().reversed()
         let topHeights = adaptiveHeights.prefix(5).map(String.init).joined(separator: ", ")
         tubeLog.notice("parsePlayerInfo id=\(videoId, privacy: .public) hls=\(hlsURL != nil, privacy: .public) totalFormats=\(uniqueFormats.count, privacy: .public) topHeights=\(topHeights, privacy: .public)")
 
@@ -778,7 +880,7 @@ extension InnerTubeAPI {
         guard hlsURL != nil || !uniqueFormats.isEmpty else {
             throw APIError.unavailable("This video is unavailable")
         }
-        
+
         let hasAnyURL = hlsURL != nil || uniqueFormats.contains { $0.url != nil }
         if !hasAnyURL {
             tubeLog.error("❌ parsePlayerInfo: streamingData present but all format URLs are nil (cipher-protected?)")
@@ -791,10 +893,11 @@ extension InnerTubeAPI {
 
     // MARK: - Private n-parameter helpers
 
-    nonisolated private func extractNParam(from url: URL) -> String? {
+    private nonisolated func extractNParam(from url: URL) -> String? {
         if let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
            let nItem = comps.queryItems?.first(where: { $0.name == "n" }),
-           let n = nItem.value, !n.isEmpty {
+           let n = nItem.value, !n.isEmpty
+        {
             return n
         }
         let parts = url.pathComponents
@@ -803,7 +906,7 @@ extension InnerTubeAPI {
         return n.isEmpty ? nil : n
     }
 
-    nonisolated private func replacing(n old: String, with new: String, in url: URL) -> URL {
+    private nonisolated func replacing(n old: String, with new: String, in url: URL) -> URL {
         let original = url.absoluteString
         if original.contains("/n/\(old)/") {
             let replaced = original.replacingOccurrences(of: "/n/\(old)/", with: "/n/\(new)/")
@@ -843,28 +946,28 @@ extension InnerTubeAPI {
             let thumbnailURL = ((renderer["image"] as? [String: Any])?["thumbnails"] as? [[String: Any]])?
                 .last.flatMap { $0["url"] as? String }.flatMap { URL(string: $0) }
 
-            // NSNumber bridges all JSON numbers (int or float). Use .intValue so both
-            // integer JSON numbers (e.g. 257357) and float ones (257357.0) are handled.
-            // Some API versions return startMs/endMs as quoted strings; fall back to that.
+            /// NSNumber bridges all JSON numbers (int or float). Use .intValue so both
+            /// integer JSON numbers (e.g. 257357) and float ones (257357.0) are handled.
+            /// Some API versions return startMs/endMs as quoted strings; fall back to that.
             func parseInt(_ key: String) -> Int {
                 if let n = renderer[key] as? NSNumber { return n.intValue }
-                if let s = renderer[key] as? String   { return Int(s) ?? 0 }
+                if let s = renderer[key] as? String { return Int(s) ?? 0 }
                 return 0
             }
 
-            // Position fields are always floats from the API (0–100 range).
+            /// Position fields are always floats from the API (0–100 range).
             func parseDouble(_ key: String, default def: Double) -> Double {
                 if let n = renderer[key] as? NSNumber { return n.doubleValue }
                 return def
             }
 
-            let left        = parseDouble("left",        default: 0)
-            let top         = parseDouble("top",         default: 0)
-            let width       = parseDouble("width",       default: 20)
+            let left = parseDouble("left", default: 0)
+            let top = parseDouble("top", default: 0)
+            let width = parseDouble("width", default: 20)
             let aspectRatio = parseDouble("aspectRatio", default: 1.7778)
-            let startMs     = parseInt("startMs")
-            let endMs       = parseInt("endMs")
-            let id          = renderer["id"] as? String ?? UUID().uuidString
+            let startMs = parseInt("startMs")
+            let endMs = parseInt("endMs")
+            let id = renderer["id"] as? String ?? UUID().uuidString
 
             tubeLog.notice("endCard id=\(id, privacy: .public) style=\(styleRaw, privacy: .public) videoId=\(videoId ?? "nil", privacy: .public) startMs=\(startMs, privacy: .public) endMs=\(endMs, privacy: .public)")
 
@@ -915,7 +1018,7 @@ extension InnerTubeAPI {
         // BUG-006 fix: log errors and retry once for transient failures instead of silently discarding.
         do {
             let (_, response) = try await session.data(for: request)
-            if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
                 tubeLog.warning("pingTrackingURL: HTTP \(http.statusCode) for \(url.absoluteString.prefix(120), privacy: .public)")
             }
         } catch is CancellationError {
@@ -924,7 +1027,7 @@ extension InnerTubeAPI {
             tubeLog.warning("pingTrackingURL: transient error (\(error.localizedDescription, privacy: .public)) — retrying once")
             do {
                 let (_, response) = try await session.data(for: request)
-                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
                     tubeLog.error("pingTrackingURL: retry HTTP \(http.statusCode) for \(url.absoluteString.prefix(120), privacy: .public)")
                 }
             } catch {
@@ -938,8 +1041,8 @@ extension InnerTubeAPI {
     private static func fallbackPlaybackURL(videoId: String) -> URL {
         var comps = URLComponents(string: "https://www.youtube.com/api/stats/playback")!
         comps.queryItems = [
-            URLQueryItem(name: "ns",    value: "yt"),
-            URLQueryItem(name: "el",    value: "detailpage"),
+            URLQueryItem(name: "ns", value: "yt"),
+            URLQueryItem(name: "el", value: "detailpage"),
             URLQueryItem(name: "docid", value: videoId),
         ]
         return comps.url!
@@ -949,8 +1052,8 @@ extension InnerTubeAPI {
     private static func fallbackWatchtimeURL(videoId: String) -> URL {
         var comps = URLComponents(string: "https://www.youtube.com/api/stats/watchtime")!
         comps.queryItems = [
-            URLQueryItem(name: "ns",    value: "yt"),
-            URLQueryItem(name: "el",    value: "detailpage"),
+            URLQueryItem(name: "ns", value: "yt"),
+            URLQueryItem(name: "el", value: "detailpage"),
             URLQueryItem(name: "docid", value: videoId),
         ]
         return comps.url!
@@ -963,7 +1066,7 @@ extension Array {
     func asyncMap<T>(_ transform: @Sendable (Element) async throws -> T) async rethrows -> [T] {
         var results = [T]()
         for element in self {
-            results.append(try await transform(element))
+            try await results.append(transform(element))
         }
         return results
     }

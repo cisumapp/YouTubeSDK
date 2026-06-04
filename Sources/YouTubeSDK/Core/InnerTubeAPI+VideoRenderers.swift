@@ -6,7 +6,6 @@ private let tubeLog = Logger(subsystem: appSubsystem, category: "InnerTube")
 // MARK: - InternalVideo renderer parsers
 
 extension InnerTubeAPI {
-
     // MARK: - Testing hooks
 
     /// Internal accessor so unit tests can exercise the JSON parser without a live network.
@@ -29,7 +28,7 @@ extension InnerTubeAPI {
         var continuationToken: String? = nil
 
         // Renderer keys that are known ad/promoted slots — skip silently.
-        let adRendererKeys: Set<String> = [
+        let adRendererKeys: Set = [
             "adSlotRenderer", "adRenderer", "promotedSparklesInternalVideoRenderer",
             "promotedInternalVideoRenderer", "adBreakServiceRenderer",
             "movingThumbnailRenderer",
@@ -52,12 +51,15 @@ extension InnerTubeAPI {
                 if let vr = dict["videoRenderer"] as? [String: Any], let v = parseInternalVideoRenderer(vr) {
                     videos.append(v)
                 } else if let ri = dict["richItemRenderer"] as? [String: Any],
-                          let content = ri["content"] as? [String: Any] {
+                          let content = ri["content"] as? [String: Any]
+                {
                     if let vr = content["videoRenderer"] as? [String: Any],
-                       let v = parseInternalVideoRenderer(vr) {
+                       let v = parseInternalVideoRenderer(vr)
+                    {
                         videos.append(v)
                     } else if let reel = content["reelItemRenderer"] as? [String: Any],
-                              let v = parseReelItemRenderer(reel) {
+                              let v = parseReelItemRenderer(reel)
+                    {
                         videos.append(v)
                     } else {
                         let contentKeys = content.keys.sorted()
@@ -66,7 +68,9 @@ extension InnerTubeAPI {
                             tubeLog.debug("walkShelfContents: skipping ad richItemRenderer keys=\(contentKeys, privacy: .public)")
                         } else {
                             tubeLog.notice("walkShelfContents: unrecognised richItemRenderer — add key to adRendererKeys if it is an ad\nkeys=\(contentKeys, privacy: .public)\nJSON=\(dumpJSON(content), privacy: .public)")
-                            for value in content.values { videos += walkShelfContents(value, depth: depth + 1) }
+                            for value in content.values {
+                                videos += walkShelfContents(value, depth: depth + 1)
+                            }
                         }
                     }
                 } else {
@@ -75,11 +79,15 @@ extension InnerTubeAPI {
                     if isAd {
                         tubeLog.debug("walkShelfContents: skipping ad renderer keys=\(dictKeys, privacy: .public)")
                     } else {
-                        for value in dict.values { videos += walkShelfContents(value, depth: depth + 1) }
+                        for value in dict.values {
+                            videos += walkShelfContents(value, depth: depth + 1)
+                        }
                     }
                 }
             } else if let arr = obj as? [Any] {
-                for item in arr { videos += walkShelfContents(item, depth: depth + 1) }
+                for item in arr {
+                    videos += walkShelfContents(item, depth: depth + 1)
+                }
             }
             return videos
         }
@@ -109,29 +117,39 @@ extension InnerTubeAPI {
                 if let contItem = dict["continuationItemRenderer"] as? [String: Any],
                    let contEndpoint = contItem["continuationEndpoint"] as? [String: Any],
                    let contCmd = contEndpoint["continuationCommand"] as? [String: Any],
-                   let ct = contCmd["token"] as? String {
+                   let ct = contCmd["token"] as? String
+                {
                     continuationToken = ct
                     return
                 }
                 // Log any richSectionRenderer whose inner content is not a richShelfRenderer
                 // (ads and promos often appear as richSectionRenderer wrapping a non-shelf renderer)
                 if let section = dict["richSectionRenderer"] as? [String: Any],
-                   let content = section["content"] as? [String: Any] {
+                   let content = section["content"] as? [String: Any]
+                {
                     let contentKeys = content.keys.sorted()
                     let isAd = contentKeys.contains(where: { adRendererKeys.contains($0) })
                     if isAd {
                         tubeLog.debug("walk: skipping ad richSectionRenderer content keys=\(contentKeys, privacy: .public)")
                     } else if !contentKeys.contains("richShelfRenderer") {
                         tubeLog.notice("walk: unrecognised richSectionRenderer — add key to adRendererKeys if it is an ad\nkeys=\(contentKeys, privacy: .public)\nJSON=\(dumpJSON(content), privacy: .public)")
-                        for value in dict.values { walk(value, depth: depth + 1) }
+                        for value in dict.values {
+                            walk(value, depth: depth + 1)
+                        }
                     } else {
-                        for value in dict.values { walk(value, depth: depth + 1) }
+                        for value in dict.values {
+                            walk(value, depth: depth + 1)
+                        }
                     }
                     return
                 }
-                for value in dict.values { walk(value, depth: depth + 1) }
+                for value in dict.values {
+                    walk(value, depth: depth + 1)
+                }
             } else if let arr = obj as? [Any] {
-                for item in arr { walk(item, depth: depth + 1) }
+                for item in arr {
+                    walk(item, depth: depth + 1)
+                }
             }
         }
 
@@ -161,10 +179,10 @@ extension InnerTubeAPI {
         // when the tile metadata lines contain no relative date string.
         var currentSectionDate: Date? = nil
 
-        // Walk the renderer tree to find videoRenderers and continuationItemRenderers.
-        // Handles WEB (videoRenderer, richItemRenderer, compactInternalVideoRenderer),
-        // WEB grid (gridInternalVideoRenderer), and TVHTML5 tileRenderer (subs/history/home on TV client).
-        // Matches Android MediaServiceCore ItemWrapper renderer dispatch order.
+        /// Walk the renderer tree to find videoRenderers and continuationItemRenderers.
+        /// Handles WEB (videoRenderer, richItemRenderer, compactInternalVideoRenderer),
+        /// WEB grid (gridInternalVideoRenderer), and TVHTML5 tileRenderer (subs/history/home on TV client).
+        /// Matches Android MediaServiceCore ItemWrapper renderer dispatch order.
         func walk(_ obj: Any, depth: Int = 0) {
             guard depth < 50 else {
                 tubeLog.warning("parseInternalVideoGroup: walk depth limit (50) reached — skipping subtree")
@@ -177,8 +195,9 @@ extension InnerTubeAPI {
                 // recurse into gridRenderer.items to collect the video tiles.
                 if let continuations = dict["continuations"] as? [[String: Any]],
                    let token = continuations.first
-                       .flatMap({ $0["nextContinuationData"] as? [String: Any] })
-                       .flatMap({ $0["continuation"] as? String }) {
+                   .flatMap({ $0["nextContinuationData"] as? [String: Any] })
+                   .flatMap({ $0["continuation"] as? String })
+                {
                     nextPageToken = token
                 }
 
@@ -210,7 +229,8 @@ extension InnerTubeAPI {
                 } else if let renderer = dict["reelItemRenderer"] as? [String: Any] {
                     if let v = parseReelItemRenderer(renderer) { videos.append(v) }
                 } else if let renderer = dict["richItemRenderer"] as? [String: Any],
-                          let content = renderer["content"] as? [String: Any] {
+                          let content = renderer["content"] as? [String: Any]
+                {
                     if let videoRenderer = content["videoRenderer"] as? [String: Any] {
                         if let v = parseInternalVideoRenderer(videoRenderer) { videos.append(v) }
                     } else if let reelRenderer = content["reelItemRenderer"] as? [String: Any] {
@@ -221,11 +241,14 @@ extension InnerTubeAPI {
                     } else if let contItem = content["continuationItemRenderer"] as? [String: Any],
                               let endpoint = contItem["continuationEndpoint"] as? [String: Any],
                               let command = endpoint["continuationCommand"] as? [String: Any],
-                              let token = command["token"] as? String {
+                              let token = command["token"] as? String
+                    {
                         // Continuation token nested inside richItemRenderer
                         nextPageToken = token
                     } else {
-                        for value in content.values { walk(value, depth: depth + 1) }
+                        for value in content.values {
+                            walk(value, depth: depth + 1)
+                        }
                     }
                 } else if let renderer = dict["compactInternalVideoRenderer"] as? [String: Any] {
                     if let v = parseInternalVideoRenderer(renderer) { videos.append(v) }
@@ -240,23 +263,29 @@ extension InnerTubeAPI {
                 } else if let contItem = dict["continuationItemRenderer"] as? [String: Any],
                           let endpoint = contItem["continuationEndpoint"] as? [String: Any],
                           let command = endpoint["continuationCommand"] as? [String: Any],
-                          let token = command["token"] as? String {
+                          let token = command["token"] as? String
+                {
                     nextPageToken = token
                 } else {
-                    for value in dict.values { walk(value, depth: depth + 1) }
+                    for value in dict.values {
+                        walk(value, depth: depth + 1)
+                    }
                 }
             } else if let arr = obj as? [Any] {
-                for item in arr { walk(item, depth: depth + 1) }
+                for item in arr {
+                    walk(item, depth: depth + 1)
+                }
             }
         }
 
         walk(json)
-        let shortsCount = videos.filter { $0.isShort }.count
+        let shortsCount = videos.count(where: { $0.isShort })
         tubeLog.notice("parseInternalVideoGroup '\(title ?? "nil", privacy: .public)' → \(videos.count, privacy: .public) videos (\(videos.count - shortsCount, privacy: .public) regular, \(shortsCount, privacy: .public) shorts), nextPage=\(nextPageToken != nil ? "yes" : "no", privacy: .public)")
         return InternalVideoGroup(title: title, videos: videos, nextPageToken: nextPageToken)
     }
 
     // MARK: – TVHTML5 tileRenderer parser (Android TileItem methodology)
+
     // Mirrors: TileItem.getInternalVideoId(), getTitle(), getThumbnails(), getBadgeText(), getChannelId()
     private func parseTileRenderer(_ tile: [String: Any]) -> InternalVideo? {
         // Only parse video tiles — require the content type to be explicitly set.
@@ -308,8 +337,9 @@ extension InnerTubeAPI {
             return nil
         }()
         guard let videoId = reelWatchEndpoint?["videoId"] as? String
-                         ?? watchEndpoint?["videoId"] as? String
-                         ?? (tile["contentId"] as? String) else {
+            ?? watchEndpoint?["videoId"] as? String
+            ?? (tile["contentId"] as? String)
+        else {
             return nil
         }
 
@@ -341,11 +371,10 @@ extension InnerTubeAPI {
                   let subtitleText = (showMenu["subtitle"] as? [String: Any])?["simpleText"] as? String,
                   let atIndex = subtitleText.firstIndex(of: "@")
             else { return nil }
-            let handle = subtitleText[atIndex...]
+            return subtitleText[atIndex...]
                 .components(separatedBy: .whitespacesAndNewlines)
                 .first
                 .map { String($0) }
-            return handle
         }()
 
         // thumbnail: header.tileHeaderRenderer.thumbnail.thumbnails — Android: TileItem.getThumbnails()
@@ -466,6 +495,7 @@ extension InnerTubeAPI {
     }
 
     // MARK: – WEB lockupViewModel parser (Android LockupItem methodology)
+
     // Mirrors: LockupItem.getInternalVideoId(), getTitle(), getThumbnails() in CommonHelper.kt
     private func parseLockupViewModel(_ lockup: [String: Any]) -> InternalVideo? {
         // videoId: rendererContext.commandContext.onTap.innertubeCommand.{watchEndpoint|reelWatchEndpoint}.videoId
@@ -478,7 +508,7 @@ extension InnerTubeAPI {
         let reelEndpoint = innertubeCommand["reelWatchEndpoint"] as? [String: Any]
         let watchEndpoint = innertubeCommand["watchEndpoint"] as? [String: Any]
         guard let videoId = reelEndpoint?["videoId"] as? String
-                          ?? watchEndpoint?["videoId"] as? String else { return nil }
+            ?? watchEndpoint?["videoId"] as? String else { return nil }
         let isShort = reelEndpoint != nil
         if isShort {
             tubeLog.debug("lockupViewModel isShort=true id=\(videoId, privacy: .public) signal=reelWatchEndpoint")
@@ -511,24 +541,24 @@ extension InnerTubeAPI {
         // lockupMetadataViewModel.metadata.contentMetadataViewModel.metadataRows[].metadataParts[]
         //   .text.commandRuns[].onTap.innertubeCommand.browseEndpoint.browseId (fallback)
         let channelId: String? = (watchEndpoint?["channelId"] as? String)
-                               ?? (reelEndpoint?["channelId"] as? String) ?? {
-            for row in metaRows {
-                guard let parts = row["metadataParts"] as? [[String: Any]] else { continue }
-                for part in parts {
-                    guard let text = part["text"] as? [String: Any],
-                          let commandRuns = text["commandRuns"] as? [[String: Any]]
-                    else { continue }
-                    for run in commandRuns {
-                        guard let cmd = (run["onTap"] as? [String: Any])?["innertubeCommand"] as? [String: Any],
-                              let browseId = (cmd["browseEndpoint"] as? [String: Any])?["browseId"] as? String,
-                              browseId.hasPrefix("UC")
+            ?? (reelEndpoint?["channelId"] as? String) ?? {
+                for row in metaRows {
+                    guard let parts = row["metadataParts"] as? [[String: Any]] else { continue }
+                    for part in parts {
+                        guard let text = part["text"] as? [String: Any],
+                              let commandRuns = text["commandRuns"] as? [[String: Any]]
                         else { continue }
-                        return browseId
+                        for run in commandRuns {
+                            guard let cmd = (run["onTap"] as? [String: Any])?["innertubeCommand"] as? [String: Any],
+                                  let browseId = (cmd["browseEndpoint"] as? [String: Any])?["browseId"] as? String,
+                                  browseId.hasPrefix("UC")
+                            else { continue }
+                            return browseId
+                        }
                     }
                 }
-            }
-            return nil
-        }()
+                return nil
+            }()
 
         // thumbnail: contentImage.thumbnailViewModel.image.thumbnails
         let thumbVM = (lockup["contentImage"] as? [String: Any])?["thumbnailViewModel"] as? [String: Any]
@@ -571,6 +601,7 @@ extension InnerTubeAPI {
     }
 
     // MARK: – Shorts reelItemRenderer parser
+
     private func parseReelItemRenderer(_ r: [String: Any]) -> InternalVideo? {
         guard let videoId = r["videoId"] as? String else { return nil }
         let title = (r["headline"] as? [String: Any]).flatMap { extractText($0) } ?? ""
@@ -586,7 +617,8 @@ extension InnerTubeAPI {
         // or ownerText/shortBylineText runs[0].navigationEndpoint.browseEndpoint.browseId (fallback)
         let channelId: String? = {
             if let channelId = (r["navigationEndpoint"] as? [String: Any])
-                .flatMap({ ($0["reelWatchEndpoint"] as? [String: Any])?["channelId"] as? String }) {
+                .flatMap({ ($0["reelWatchEndpoint"] as? [String: Any])?["channelId"] as? String })
+            {
                 return channelId
             }
             let sourceKey = r["ownerText"] != nil ? "ownerText" : "shortBylineText"
@@ -611,6 +643,7 @@ extension InnerTubeAPI {
     }
 
     // MARK: – WEB videoRenderer parser
+
     func parseInternalVideoRenderer(_ r: [String: Any]) -> InternalVideo? {
         guard let videoId = r["videoId"] as? String else { return nil }
         let title = (r["title"] as? [String: Any]).flatMap { extractText($0) }
@@ -637,8 +670,8 @@ extension InnerTubeAPI {
         // duration: lengthText (videoRenderer) or thumbnailOverlays[N].thumbnailOverlayTimeStatusRenderer.text (gridInternalVideoRenderer)
         let lengthText: String? = (r["lengthText"] as? [String: Any]).flatMap { extractText($0) }
             ?? (r["thumbnailOverlays"] as? [[String: Any]])?
-                .compactMap { ($0["thumbnailOverlayTimeStatusRenderer"] as? [String: Any])?["text"] as? [String: Any] }
-                .first.flatMap { extractText($0) }
+            .compactMap { ($0["thumbnailOverlayTimeStatusRenderer"] as? [String: Any])?["text"] as? [String: Any] }
+            .first.flatMap { extractText($0) }
         let duration = lengthText.flatMap { parseDuration($0) }
 
         let viewCountText = (r["viewCountText"] as? [String: Any]).flatMap { extractText($0) }
@@ -670,21 +703,20 @@ extension InnerTubeAPI {
             let hasShortOverlay = (r["thumbnailOverlays"] as? [[String: Any]])?.contains {
                 ($0["thumbnailOverlayTimeStatusRenderer"] as? [String: Any])?["style"] as? String == "SHORTS"
             } ?? false
-            if hasShortOverlay && (duration.map { $0 <= 180 } ?? true) { return true }
+            if hasShortOverlay, (duration.map { $0 <= 180 } ?? true) { return true }
             // Tertiary signal: ustreamerConfig == "GgIIBQ==" — mirrors parseTileRenderer.
             // Catches compactInternalVideoRenderer Short tiles in TV subs/history feeds that omit both
             // reelWatchEndpoint and the overlay style.
             let watchEndpoint = (r["navigationEndpoint"] as? [String: Any])?["watchEndpoint"] as? [String: Any]
             let ustreamerConfig = watchEndpoint?["ustreamerConfig"] as? String
-            if ustreamerConfig == "GgIIBQ==" && (duration.map { $0 <= 180 } ?? true) { return true }
+            if ustreamerConfig == "GgIIBQ==", (duration.map { $0 <= 180 } ?? true) { return true }
             // Quaternary signal: vertical thumbnail (height > width) — another parseTileRenderer mirror.
             let thumbnails = (r["thumbnail"] as? [String: Any])?["thumbnails"] as? [[String: Any]]
-            let isVerticalThumbnail = thumbnails?.contains {
+            return thumbnails?.contains {
                 let w = ($0["width"] as? Int) ?? 0
                 let h = ($0["height"] as? Int) ?? 0
                 return h > w && w > 0
             } ?? false
-            return isVerticalThumbnail
         }()
         if isShort {
             let signal: String
@@ -705,7 +737,8 @@ extension InnerTubeAPI {
 
         let watchProgress: Double? = (r["thumbnailOverlays"] as? [[String: Any]])?
             .compactMap { ($0["thumbnailOverlayResumePlaybackRenderer"] as? [String: Any])
-                .flatMap { $0["percentDurationWatched"] as? Double } }
+                .flatMap { $0["percentDurationWatched"] as? Double }
+            }
             .first.map { $0 / 100.0 }
 
         // Parse feed feedback tokens keyed by icon type from the video's menuRenderer.
@@ -751,8 +784,9 @@ extension InnerTubeAPI {
     }
 
     // MARK: – WEB playlistInternalVideoRenderer parser (BUG-012 fix)
-    // Playlist video items use shortBylineText/shortViewCountText instead of
-    // ownerText/viewCountText which parseInternalVideoRenderer expects.
+
+    /// Playlist video items use shortBylineText/shortViewCountText instead of
+    /// ownerText/viewCountText which parseInternalVideoRenderer expects.
     private func parsePlaylistInternalVideoRenderer(_ r: [String: Any]) -> InternalVideo? {
         guard let videoId = r["videoId"] as? String else { return nil }
         let title = (r["title"] as? [String: Any]).flatMap { extractText($0) } ?? ""
@@ -786,7 +820,8 @@ extension InnerTubeAPI {
 
         let watchProgress: Double? = (r["thumbnailOverlays"] as? [[String: Any]])?
             .compactMap { ($0["thumbnailOverlayResumePlaybackRenderer"] as? [String: Any])
-                .flatMap { $0["percentDurationWatched"] as? Double } }
+                .flatMap { $0["percentDurationWatched"] as? Double }
+            }
             .first.map { $0 / 100.0 }
 
         let publishedAt: Date? = (r["publishedTimeText"] as? [String: Any])
@@ -809,4 +844,3 @@ extension InnerTubeAPI {
         )
     }
 }
-

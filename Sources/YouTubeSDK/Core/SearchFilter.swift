@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - SearchFilter
+
 //
 // Mirrors Android SearchPresenter's filter options:
 //   uploadDate | duration | type | features | sorting
@@ -18,85 +19,84 @@ import Foundation
 //   field 3 (duration):   varint — Duration raw value   (0 = omit)
 
 public struct SearchFilter: Sendable, Equatable {
-
     // MARK: - Nested enums (mirror Android Constants)
 
     public enum SortOrder: Int, CaseIterable, Sendable {
-        case relevance  = 0   // default — no param emitted
-        case rating     = 1
+        case relevance = 0 // default — no param emitted
+        case rating = 1
         case uploadDate = 2
-        case viewCount  = 3
+        case viewCount = 3
 
         public var label: String {
             switch self {
-            case .relevance:  return "Relevance"
-            case .rating:     return "Rating"
-            case .uploadDate: return "Upload date"
-            case .viewCount:  return "View count"
+            case .relevance: "Relevance"
+            case .rating: "Rating"
+            case .uploadDate: "Upload date"
+            case .viewCount: "View count"
             }
         }
     }
 
     public enum UploadDate: Int, CaseIterable, Sendable {
-        case anytime   = 0   // default — no param emitted
-        case lastHour  = 1
-        case today     = 2
-        case thisWeek  = 3
+        case anytime = 0 // default — no param emitted
+        case lastHour = 1
+        case today = 2
+        case thisWeek = 3
         case thisMonth = 4
-        case thisYear  = 5
+        case thisYear = 5
 
         public var label: String {
             switch self {
-            case .anytime:   return "Anytime"
-            case .lastHour:  return "Last hour"
-            case .today:     return "Today"
-            case .thisWeek:  return "This week"
-            case .thisMonth: return "This month"
-            case .thisYear:  return "This year"
+            case .anytime: "Anytime"
+            case .lastHour: "Last hour"
+            case .today: "Today"
+            case .thisWeek: "This week"
+            case .thisMonth: "This month"
+            case .thisYear: "This year"
             }
         }
     }
 
     public enum InternalVideoType: Int, CaseIterable, Sendable {
-        case any      = 0   // default — no param emitted
-        case video    = 1
-        case channel  = 2
+        case any = 0 // default — no param emitted
+        case video = 1
+        case channel = 2
         case playlist = 3
-        case movie    = 4
+        case movie = 4
 
         public var label: String {
             switch self {
-            case .any:      return "Any type"
-            case .video:    return "InternalVideo"
-            case .channel:  return "Channel"
-            case .playlist: return "Playlist"
-            case .movie:    return "Movie"
+            case .any: "Any type"
+            case .video: "InternalVideo"
+            case .channel: "Channel"
+            case .playlist: "Playlist"
+            case .movie: "Movie"
             }
         }
     }
 
     public enum Duration: Int, CaseIterable, Sendable {
-        case any    = 0   // default — no param emitted
-        case short  = 1   // < 4 min
-        case medium = 2   // 4 – 20 min
-        case long   = 3   // > 20 min
+        case any = 0 // default — no param emitted
+        case short = 1 // < 4 min
+        case medium = 2 // 4 – 20 min
+        case long = 3 // > 20 min
 
         public var label: String {
             switch self {
-            case .any:    return "Any duration"
-            case .short:  return "Under 4 minutes"
-            case .medium: return "4 – 20 minutes"
-            case .long:   return "Over 20 minutes"
+            case .any: "Any duration"
+            case .short: "Under 4 minutes"
+            case .medium: "4 – 20 minutes"
+            case .long: "Over 20 minutes"
             }
         }
     }
 
     // MARK: - Properties
 
-    public var sortOrder: SortOrder  = .relevance
+    public var sortOrder: SortOrder = .relevance
     public var uploadDate: UploadDate = .anytime
-    public var type: InternalVideoType       = .any
-    public var duration: Duration    = .any
+    public var type: InternalVideoType = .any
+    public var duration: Duration = .any
 
     public static let `default` = SearchFilter()
 
@@ -107,18 +107,19 @@ public struct SearchFilter: Sendable, Equatable {
     // MARK: - Init
 
     public init(
-        sortOrder: SortOrder  = .relevance,
+        sortOrder: SortOrder = .relevance,
         uploadDate: UploadDate = .anytime,
-        type: InternalVideoType       = .any,
-        duration: Duration    = .any
+        type: InternalVideoType = .any,
+        duration: Duration = .any
     ) {
-        self.sortOrder  = sortOrder
+        self.sortOrder = sortOrder
         self.uploadDate = uploadDate
-        self.type       = type
-        self.duration   = duration
+        self.type = type
+        self.duration = duration
     }
 
     // MARK: - Params encoding
+
     //
     // Produces the base64-encoded protobuf string consumed by
     // InnerTube's `params` search field.
@@ -158,13 +159,13 @@ public struct SearchFilter: Sendable, Equatable {
 private extension Data {
     /// Encode a varint tag + varint value: `(fieldNumber << 3) | 0`, then the value.
     mutating func appendVarintField(fieldNumber: Int, value: Int) {
-        appendVarint(UInt64((fieldNumber << 3) | 0))  // wire type 0 = varint
+        appendVarint(UInt64((fieldNumber << 3) | 0)) // wire type 0 = varint
         appendVarint(UInt64(value))
     }
 
     /// Encode a length-delimited tag + embedded bytes: `(fieldNumber << 3) | 2`, length, bytes.
     mutating func appendLenField(fieldNumber: Int, value: Data) {
-        appendVarint(UInt64((fieldNumber << 3) | 2))  // wire type 2 = length-delimited
+        appendVarint(UInt64((fieldNumber << 3) | 2)) // wire type 2 = length-delimited
         appendVarint(UInt64(value.count))
         append(value)
     }

@@ -15,7 +15,6 @@ import Foundation
 /// The result is always validated by `YouTubeLinkHandler.videoID(from:)` before
 /// being returned to the caller.
 public enum HTMLInternalVideoLinkExtractor {
-
     // MARK: - Public API
 
     /// Scans `html` for a URL that `YouTubeLinkHandler` can extract a video ID from.

@@ -7,12 +7,11 @@ import Foundation
 @MainActor
 @Observable
 public final class CaptionsManager {
-
     // MARK: - State
 
     public var availableCaptions: [InternalCaptionTrack] = []
-    public var selectedCaption: InternalCaptionTrack? = nil
-    public var currentCaptionCue: CaptionCue? = nil
+    public var selectedCaption: InternalCaptionTrack?
+    public var currentCaptionCue: CaptionCue?
 
     // Not observed (task handle, not UI state)
     @ObservationIgnored public var captionCues: [CaptionCue] = []
@@ -54,8 +53,8 @@ public final class CaptionsManager {
                 let parser = WebVTTParser()
                 let cues = try await parser.fetchCues(from: track.baseURL)
                 guard !Task.isCancelled else { return }
-                self.captionCues = cues
-                self.updateCaptionCue(for: timeToApply)
+                captionCues = cues
+                updateCaptionCue(for: timeToApply)
             } catch {
                 // Caption fetch failed — leave cues empty
             }

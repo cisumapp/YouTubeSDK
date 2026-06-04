@@ -18,7 +18,7 @@ func retryWithBackoff<T>(
     maxAttempts: Int = 3,
     initialDelay: TimeInterval = 1.0,
     maxDelay: TimeInterval = 10.0,
-    isolation: isolated (any Actor)? = #isolation,
+    isolation _: isolated (any Actor)? = #isolation,
     _ operation: () async throws -> T
 ) async throws -> T {
     let transientCodes: [URLError.Code] = [
@@ -27,11 +27,12 @@ func retryWithBackoff<T>(
     ]
     var delay = initialDelay
     var lastError: (any Error)?
-    for attempt in 1...maxAttempts {
+    for attempt in 1 ... maxAttempts {
         do {
             return try await operation()
         } catch let urlError as URLError
-                where transientCodes.contains(urlError.code) && attempt < maxAttempts {
+            where transientCodes.contains(urlError.code) && attempt < maxAttempts
+        {
             let tag = label.isEmpty ? "" : "[\(label)] "
             retryLog.notice("\(tag)attempt \(attempt)/\(maxAttempts) failed (\(urlError.code.rawValue)), retrying in \(Int(delay))s")
             lastError = urlError

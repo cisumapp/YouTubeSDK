@@ -1,6 +1,6 @@
 import Foundation
-import os
 import Network
+import os
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -8,6 +8,7 @@ import FoundationNetworking
 private let tubeLog = Logger(subsystem: appSubsystem, category: "InnerTube")
 
 // MARK: - InnerTubeAPI
+
 //
 // Implements a subset of the unofficial YouTube InnerTube API used by
 // the Android SmartTube client (MediaServiceCore). This layer replaces
@@ -18,7 +19,6 @@ private let tubeLog = Logger(subsystem: appSubsystem, category: "InnerTube")
 //   https://github.com/TeamNewPipe/NewPipeExtractor
 
 public actor InnerTubeAPI {
-
     // MARK: - Configuration
 
     let session: URLSession
@@ -29,6 +29,7 @@ public actor InnerTubeAPI {
     var sapisid: String?
 
     // MARK: - signatureTimestamp (STS) cache
+
     //
     // The TV authenticated player request requires `signatureTimestamp` inside
     // `playbackContext.contentPlaybackContext` to validate the current player JS
@@ -37,27 +38,78 @@ public actor InnerTubeAPI {
     // The value is fetched lazily from YouTube's homepage and cached for 1 hour.
     var signatureTimestamp: Int?
     var signatureTimestampFetchedAt: Date?
-    
+
     /// Current YouTube player ID (e.g. "c2f7551f") extracted from the homepage.
     /// Used for n-parameter descrambling.
     var playerID: String?
 
     // MARK: - poToken storage (Step 1)
+
     //
-    // Populated by a PoTokenProvider when configured; nil until then (zero behaviour change).
-    // All injection points are gated on `poToken != nil`.
+    // Populated either by a PoTokenProvider (BotGuardClient) or by storeExternalPoToken()
+    // (Option B: token extracted from a running WKWebView YouTube player session).
+    // All injection points are gated on `poToken != nil` (zero behaviour change when nil).
     var poToken: String?
-    var poTokenInternalVideoId: String?
+    var poTokenVideoId: String?
     var poTokenExpiry: Date?
 
+    // MARK: - External PoToken API (Option B)
+
+    /// Returns the current visitor data identifier (from the most recent InnerTube response).
+    /// Used by BotGuardWebViewRunner to mint a PoToken for the correct session identifier.
+    public func currentVisitorData() -> String? {
+        visitorData
+    }
+
+    /// Stores a PO token that was extracted from the YouTube player running inside a
+    /// hidden WKWebView (see `YouTubeWebViewHLSExtractor.extractedPoToken`).
+    /// The token is applied to all subsequent `fetchPlayerInfo` calls for `videoId`
+    /// via `applyingPoToken`, allowing rqh=1 adaptive streams to be retried with CDN auth.
+    public func storeExternalPoToken(_ token: String, for videoId: String) {
+        poToken = token
+        poTokenVideoId = videoId
+    }
+
+    /// Returns true when a PO token is cached for the given video ID.
+    /// Used by `tryAllStreams` to decide whether to attempt rqh=1 adaptive composition.
+    public func hasPoToken(for videoId: String) -> Bool {
+        poToken != nil && poTokenVideoId == videoId
+    }
+
+    /// Returns the cached PO token for `videoId`, or nil if none is available.
+    /// Phase -1a uses this to recover the BotGuard-minted token when
+    /// `VideoPreloadCache.wkHLSPoTokenCache` is empty (e.g. for videos that have no
+    /// `serviceIntegrityDimensions.poToken` in their player API response — the WKWebView
+    /// extractor stores nil in the cache, but BotGuard may have minted a token separately
+    /// during the 2 s prefetchPoToken window in loadAsync).
+    public func currentPoToken(for videoId: String) -> String? {
+        guard poTokenVideoId == videoId else { return nil }
+        return poToken
+    }
+
+    /// Fetches a PO token from the configured provider in the background and caches it
+    /// in `poToken`/`poTokenVideoId`. Call this fire-and-forget when starting a video load
+    /// so the token is available for subsequent retry attempts without blocking the
+    /// primary fetch path. BotGuardClient caches within its TTL (~1h), so this is fast
+    /// after the first successful pipeline run.
+    public func prefetchPoToken(for videoId: String) async {
+        guard let provider = poTokenProvider, poToken == nil || poTokenVideoId != videoId else { return }
+        if let pot = try? await provider.token(for: videoId) {
+            poToken = pot
+            poTokenVideoId = videoId
+            tubeLog.notice("[InnerTube] prefetchPoToken ✅ (len=\(pot.count)) for \(videoId, privacy: .public)")
+        }
+    }
+
     // MARK: - PoTokenProvider
+
     let poTokenProvider: (any PoTokenProvider)?
 
     // MARK: - Mutations
 
     /// Updates the OAuth Bearer token used for authenticated requests.
     public func updateAuthToken(_ token: String?) {
-        self.authToken = token
+        authToken = token
     }
 
     /// Updates the SAPISID cookie value used for WEB_CREATOR requests.
@@ -66,20 +118,32 @@ public actor InnerTubeAPI {
     }
 
     // MARK: - Internal Video resolver (Step 1)
-    
+
     /// Snapshots are used by InternalAuthService to read state synchronously.
-    public var currentAuthToken: String? { authToken }
-    public var currentSAPISID: String? { sapisid }
+    public var currentAuthToken: String? {
+        authToken
+    }
+
+    public var currentSAPISID: String? {
+        sapisid
+    }
+
+    /// Returns whether the SAPISID cookie is currently set.
+    /// Used by callers in other modules to avoid redundant recovery attempts.
+    public var hasSAPISID: Bool {
+        sapisid != nil
+    }
 
     // MARK: - Network path monitoring
+
     //
     // Resets `visitorData` when the network path changes (VPN connect/disconnect,
     // WiFi switch, cellular handover). A fresh visitorData is issued on the next
     // browse request and is tied to the new IP context, avoiding UNPLAYABLE responses
     // caused by session/IP mismatch after a network transition.
-    nonisolated private let pathMonitor = NWPathMonitor()
-    private var lastPathStatus: NWPath.Status? = nil
-    private var lastInterface: NWInterface.InterfaceType? = nil
+    private nonisolated let pathMonitor = NWPathMonitor()
+    private var lastPathStatus: NWPath.Status?
+    private var lastInterface: NWInterface.InterfaceType?
 
     /// The web client context used to fetch home/search/channel feeds.
     let webClientContext: [String: Any] = [
@@ -88,7 +152,7 @@ public actor InnerTubeAPI {
             "gl": "US",
             "clientName": InnerTubeClients.Web.name,
             "clientVersion": InnerTubeClients.Web.version,
-        ]
+        ],
     ]
 
     /// The iOS client context used for stream URL retrieval.
@@ -109,9 +173,10 @@ public actor InnerTubeAPI {
                 "osVersion": osVer,
                 "userAgent": InnerTubeClients.iOS.userAgent,
                 "clientScreen": "WATCH",
-            ]
+            ],
         ]
     }
+
     let iosUserAgent = InnerTubeClients.iOS.userAgent
 
     /// The Android client context used for download URL retrieval.
@@ -126,7 +191,7 @@ public actor InnerTubeAPI {
             "osName": "Android",
             "osVersion": "11",
             "userAgent": InnerTubeClients.Android.userAgent,
-        ]
+        ],
     ]
 
     /// The TVHTML5 client context required for all authenticated InnerTube requests
@@ -139,7 +204,7 @@ public actor InnerTubeAPI {
             "gl": "US",
             "clientName": InnerTubeClients.TV.name,
             "clientVersion": InnerTubeClients.TV.version,
-        ]
+        ],
     ]
 
     /// The TVHTML5_SIMPLY_EMBEDDED client context used for reliable HLS fallback.
@@ -150,7 +215,7 @@ public actor InnerTubeAPI {
             "clientName": InnerTubeClients.TVEmbeddedSimply.name,
             "clientVersion": InnerTubeClients.TVEmbeddedSimply.version,
             "userAgent": InnerTubeClients.TVEmbeddedSimply.userAgent,
-        ]
+        ],
     ]
 
     /// The Android VR (Oculus Quest) client context used for audio-only fallback.
@@ -171,7 +236,7 @@ public actor InnerTubeAPI {
             "userAgent": InnerTubeClients.AndroidVR.userAgent,
             "osName": "Android",
             "osVersion": "12L",
-        ]
+        ],
     ]
 
     /// The WEB_EMBEDDED_PLAYER client context for embedded iframe player requests.
@@ -186,7 +251,7 @@ public actor InnerTubeAPI {
             "clientName": InnerTubeClients.TVEmbedded.name, "userAgent": InnerTubeClients.Web.userAgent,
             "clientVersion": InnerTubeClients.TVEmbedded.version,
             "clientScreen": "EMBED",
-        ]
+        ],
     ]
 
     /// The WEB_CREATOR (YouTube Studio) client context used as a fallback player source.
@@ -199,7 +264,7 @@ public actor InnerTubeAPI {
             "clientName": InnerTubeClients.WebCreator.name, "userAgent": InnerTubeClients.Web.userAgent,
             "clientVersion": InnerTubeClients.WebCreator.version,
             "clientScreen": "WATCH",
-        ]
+        ],
     ]
 
     /// MWEB (m.youtube.com / iPad Safari) client context.
@@ -213,7 +278,7 @@ public actor InnerTubeAPI {
             "userAgent": InnerTubeClients.MWEB.userAgent,
             "clientVersion": InnerTubeClients.MWEB.version,
             "clientScreen": "WATCH",
-        ]
+        ],
     ]
 
     /// WEB client with macOS Safari UA — mirrors yt-dlp's `web_safari` client (nameID=1).
@@ -226,10 +291,10 @@ public actor InnerTubeAPI {
             "timeZone": "UTC",
             "utcOffsetMinutes": 0,
             "clientName": InnerTubeClients.WebSafari.name,
-            
+
             "clientVersion": InnerTubeClients.WebSafari.version,
             "userAgent": InnerTubeClients.WebSafari.userAgent,
-        ]
+        ],
     ]
 
     let baseURL = URL(string: "https://youtubei.googleapis.com/youtubei/v1")!
@@ -254,6 +319,9 @@ public actor InnerTubeAPI {
         config.timeoutIntervalForRequest = Self.requestTimeoutInterval
         config.timeoutIntervalForResource = 60
         config.waitsForConnectivity = true
+        // Disable URL cache — YouTube InnerTube uses POST requests which are not cacheable,
+        // and the system URL cache wastes memory accumulating response data.
+        config.urlCache = nil
         self.session = URLSession(configuration: config)
         self.authToken = authToken
         self.poTokenProvider = poTokenProvider
@@ -283,9 +351,9 @@ public actor InnerTubeAPI {
         let prevInterface = lastInterface
         lastPathStatus = path.status
         lastInterface = path.availableInterfaces.first?.type
-        
+
         guard path.status == .satisfied, prevStatus == .satisfied else { return }
-        
+
         if lastInterface != prevInterface {
             visitorData = nil
             tubeLog.notice("visitorData cleared — network interface changed (\(String(describing: prevInterface)) -> \(String(describing: self.lastInterface)))")
@@ -297,7 +365,7 @@ public actor InnerTubeAPI {
     public func setAuthToken(_ token: String?) {
         let msg = token != nil ? "token(\(token!.prefix(8))…)" : "nil"
         tubeLog.notice("setAuthToken: \(msg, privacy: .public)")
-        self.authToken = token
+        authToken = token
     }
 
     /// Sets the YouTube.com SAPISID cookie value extracted via the OAuthLogin/MergeSession
@@ -305,7 +373,7 @@ public actor InnerTubeAPI {
     public func setSAPISID(_ value: String?) {
         let msg = value != nil ? "present" : "nil"
         tubeLog.notice("setSAPISID: \(msg, privacy: .public)")
-        self.sapisid = value
+        sapisid = value
     }
 
     // MARK: - Visitor data

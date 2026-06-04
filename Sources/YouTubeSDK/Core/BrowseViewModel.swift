@@ -12,23 +12,23 @@ public enum BrowseError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case .timeout:
-            return "The feed took too long to load. Check your connection and try again."
+            "The feed took too long to load. Check your connection and try again."
         }
     }
 }
 
 // MARK: - BrowseViewModel
+
 //
 // Drives the main browse screen.  Mirrors the Android `BrowsePresenter`.
 
 @MainActor
 @Observable
 public final class BrowseViewModel {
-
     // MARK: - State
 
     public private(set) var sections: [BrowseSection] = BrowseSection.defaultSections
-    public private(set) var currentSection: BrowseSection = BrowseSection.defaultSections[0]
+    public private(set) var currentSection: BrowseSection = .defaultSections[0]
     public private(set) var videoGroups: [InternalVideoGroup] = []
     /// Populated when the current section is `.channels`; empty for all other sections.
     public private(set) var subscribedChannels: [Channel] = []
@@ -45,7 +45,7 @@ public final class BrowseViewModel {
     public private(set) var recommendedShortsInternalVideos: [InternalVideo] = []
     /// Timestamp of the last successful content fetch for the current section.
     /// Used to detect stale feeds after the app returns from background.
-    public private(set) var loadedAt: Date? = nil
+    public private(set) var loadedAt: Date?
     /// A video to open immediately via deeplink / URL interception.
     /// Cleared by the UI after the player is presented.
     public var deepLinkedInternalVideo: InternalVideo?
@@ -71,9 +71,9 @@ public final class BrowseViewModel {
         if let initial = initialSection {
             // Ensure the initial section appears in the picker list.
             if !sections.contains(initial) {
-                sections = [initial] + sections
+                self.sections = [initial] + sections
             }
-            currentSection = initial
+            self.currentSection = initial
         }
         observeFeedHideNotifications()
     }
@@ -84,13 +84,13 @@ public final class BrowseViewModel {
         hideObserverTasks.append(Task { [weak self] in
             for await note in NotificationCenter.default.notifications(named: .hideInternalVideoFromFeed) {
                 guard let self, let videoId = note.userInfo?["videoId"] as? String else { continue }
-                self.removeInternalVideo(id: videoId)
+                removeInternalVideo(id: videoId)
             }
         })
         hideObserverTasks.append(Task { [weak self] in
             for await note in NotificationCenter.default.notifications(named: .hideChannelFromFeed) {
                 guard let self, let channelId = note.userInfo?["channelId"] as? String else { continue }
-                self.removeChannel(id: channelId)
+                removeChannel(id: channelId)
             }
         })
     }
@@ -163,7 +163,8 @@ public final class BrowseViewModel {
         if target.type == .recommended,
            let arg = ProcessInfo.processInfo.arguments.first(where: {
                $0.hasPrefix("--uitesting-inject-recommended-ids=")
-           }) {
+           })
+        {
             let raw = String(arg.dropFirst("--uitesting-inject-recommended-ids=".count))
             let ids = raw.split(separator: ",").map(String.init).filter { !$0.isEmpty }
             if !ids.isEmpty {
@@ -175,13 +176,19 @@ public final class BrowseViewModel {
                 // uses lazy rendering and its items do not appear in the XCTest accessibility tree.
                 // Create 5 rows so the vertical scroll view has enough content for scroll-position
                 // tests to swipe and move rows off-screen.
-                videoGroups = (0..<5).map { rowIdx in
-                    let rowInternalVideos = ids.enumerated().map { i, id in
-                        InternalVideo(id: rowIdx == 0 ? id : "\(id)-\(rowIdx)",
-                              title: id, channelTitle: "Test Channel")
+                videoGroups = (0 ..< 5).map { rowIdx in
+                    let rowInternalVideos = ids.enumerated().map { _, id in
+                        InternalVideo(
+                            id: rowIdx == 0 ? id : "\(id)-\(rowIdx)",
+                            title: id,
+                            channelTitle: "Test Channel"
+                        )
                     }
-                    return InternalVideoGroup(title: rowIdx == 0 ? "Recommended" : nil,
-                                      videos: rowInternalVideos, layout: .row)
+                    return InternalVideoGroup(
+                        title: rowIdx == 0 ? "Recommended" : nil,
+                        videos: rowInternalVideos,
+                        layout: .row
+                    )
                 }
                 browseLog.notice("UI-testing inject: populated \(ids.count) recommended videos synchronously")
                 return
@@ -207,7 +214,7 @@ public final class BrowseViewModel {
             return
         }
         browseLog.notice("loadMore triggered: section=\(currentSection.title) currentCount=\(videoGroups.first?.videos.count ?? 0)")
-        isLoadingMore = true  // synchronous guard — prevents duplicate pagination tasks before the Task body runs
+        isLoadingMore = true // synchronous guard — prevents duplicate pagination tasks before the Task body runs
         fetchTask = Task { await fetchNextPage(for: currentSection) }
     }
 
@@ -275,9 +282,10 @@ public final class BrowseViewModel {
             if !Task.isCancelled {
                 let authSections: Set<BrowseSection.SectionType> = [.subscriptions, .history, .playlists, .channels]
                 if let apiErr = error as? APIError,
-                   case .httpError(let code) = apiErr,
-                   (code == 401 || code == 403),
-                   authSections.contains(section.type) {
+                   case let .httpError(code) = apiErr,
+                   code == 401 || code == 403,
+                   authSections.contains(section.type)
+                {
                     isAuthRequired = true
                     browseLog.notice("Auth required for \(section.title) (HTTP \(code))")
                 } else {
@@ -295,177 +303,181 @@ public final class BrowseViewModel {
 
     private func fetchSectionBody(_ section: BrowseSection) async throws {
         switch section.type {
-
-            case .home:
-                let rows = try await api.fetchHomeRows()
-                if !Task.isCancelled {
-                    if rows.flatMap({ $0.videos }).isEmpty {
-                        isAuthRequired = true
-                        let popular = try await api.search(query: "popular")
-                        var deduped = popular
-                        deduped.videos = deduplicated(popular.videos)
-                        videoGroups = [deduped]
-                    } else {
-                        isAuthRequired = false
-                        // Dedup within each row — YouTube can return the same video ID
-                        // in multiple shelves of the initial home response.
-                        var seen = Set<String>()
-                        let dedupedRows = rows.map { row -> InternalVideoGroup in
-                            var copy = row
-                            copy.videos = row.videos.filter { seen.insert($0.id).inserted }
-                            return copy
-                        }.filter { !$0.videos.isEmpty }
-                        videoGroups = dedupedRows
-                    }
-                }
-
-            case .recommended:
-                // UI-testing injection: bypass the network fetch when
-                // `--uitesting-inject-recommended-ids=<id1,id2,...>` is present.
-                // Allows Recommended chip tests to run on unauthenticated parallel
-                // simulator clones without auth or visitor-session dependency.
-                if let arg = ProcessInfo.processInfo.arguments.first(where: {
-                    $0.hasPrefix("--uitesting-inject-recommended-ids=")
-                }) {
-                    let raw = String(arg.dropFirst("--uitesting-inject-recommended-ids=".count))
-                    let ids = raw.split(separator: ",").map(String.init).filter { !$0.isEmpty }
-                    guard !ids.isEmpty, !Task.isCancelled else { break }
-                    let videos = ids.map { InternalVideo(id: $0, title: $0, channelTitle: "Test Channel") }
+        case .home:
+            let rows = try await api.fetchHomeRows()
+            if !Task.isCancelled {
+                if rows.flatMap(\.videos).isEmpty {
+                    isAuthRequired = true
+                    let popular = try await api.search(query: "popular")
+                    var deduped = popular
+                    deduped.videos = deduplicated(popular.videos)
+                    videoGroups = [deduped]
+                } else {
                     isAuthRequired = false
-                    recommendedUsesSearchFallback = false
-                    videoGroups = [InternalVideoGroup(title: "Recommended", videos: videos)]
-                    break
-                }
-                let group = try await api.fetchHome()
-                // Fetch Shorts in parallel: dedicated search + subs feed.
-                // FEshorts browseId is deprecated (HTTP 400). The subs TV-browse
-                // (tileRenderer, ustreamerConfig "GgIIBQ==") is the most reliable
-                // source of many Shorts — mirrors HomeViewModel.homeShortsInternalVideos.
-                async let shortsFetch: InternalVideoGroup? = try? api.fetchShorts()
-                async let subsFetch: InternalVideoGroup? = try? api.fetchSubscriptions()
-                let (shortsGroup, subsGroup) = await (shortsFetch, subsFetch)
-                if !Task.isCancelled {
-                    let searchShorts = shortsGroup?.videos ?? []
-                    let subsShorts   = (subsGroup?.videos ?? []).filter { $0.isShort }
-                    let homeShorts   = group.videos.filter { $0.isShort }
+                    // Dedup within each row — YouTube can return the same video ID
+                    // in multiple shelves of the initial home response.
                     var seen = Set<String>()
-                    recommendedShortsInternalVideos = (searchShorts + subsShorts + homeShorts)
-                        .filter { seen.insert($0.id).inserted }
-                    browseLog.notice("Recommended: \(recommendedShortsInternalVideos.count) shorts (search=\(searchShorts.count) subs=\(subsShorts.count) home=\(homeShorts.count))")
-                    if group.videos.isEmpty {
-                        isAuthRequired = true
-                        recommendedUsesSearchFallback = true
-                        let popular = try await api.search(query: "popular")
-                        browseLog.notice("Recommended: home feed empty, using search fallback (nextToken=\(popular.nextPageToken != nil))")
-                        var deduped = popular
-                        deduped.videos = deduplicated(popular.videos)
-                        videoGroups = [deduped]
-                    } else {
-                        isAuthRequired = false
-                        recommendedUsesSearchFallback = false
-                        var deduped = group
-                        deduped.videos = deduplicated(group.videos)
-                        videoGroups = [deduped]
-                    }
+                    let dedupedRows = rows.map { row -> InternalVideoGroup in
+                        var copy = row
+                        copy.videos = row.videos.filter { seen.insert($0.id).inserted }
+                        return copy
+                    }.filter { !$0.videos.isEmpty }
+                    videoGroups = dedupedRows
                 }
+            }
 
-            case .subscriptions:
-                if hasAuthToken {
-                    let group = try await api.fetchSubscriptions()
-                    if !Task.isCancelled {
-                        isAuthRequired = group.videos.isEmpty
-                        var deduped = group
-                        deduped.videos = deduplicated(group.videos)
-                        videoGroups = deduped.videos.isEmpty ? [] : [deduped]
-                    }
-                } else {
-                    let videos = await LocalSubscriptionFeedService.shared.fetchFeed(api: api)
-                    if !Task.isCancelled {
-                        isAuthRequired = false
-                        let deduped = deduplicated(videos)
-                        videoGroups = deduped.isEmpty ? [] : [InternalVideoGroup(title: "Subscriptions", videos: deduped)]
-                    }
-                }
-
-            case .history:
-                guard historyEnabled else {
-                    if !Task.isCancelled { videoGroups = []; isAuthRequired = false }
-                    return
-                }
-                let group = try await api.fetchHistory()
-                if !Task.isCancelled {
-                    isAuthRequired = group.videos.isEmpty
-                    videoGroups = group.videos.isEmpty ? [] : [group]
-                }
-
-            case .playlists:
-                let playlists = try await api.fetchUserPlaylists()
-                if !Task.isCancelled {
-                    isAuthRequired = playlists.isEmpty
-                    // Convert PlaylistInfo list into a InternalVideoGroup of placeholder videos
-                    let videos = playlists.map { pl -> InternalVideo in
-                        InternalVideo(id: pl.id, title: pl.title, channelTitle: pl.videoCount.map { "\($0) videos" } ?? "",
-                              thumbnailURL: pl.thumbnailURL, playlistId: pl.id)
-                    }
-                    videoGroups = videos.isEmpty ? [] : [InternalVideoGroup(title: "Playlists", videos: videos)]
-                }
-
-            case .channels:
-                if hasAuthToken {
-                    let channels = try await api.fetchSubscribedChannels()
-                    browseLog.notice("channels fetch complete: \(channels.count) channels, isCancelled=\(Task.isCancelled)")
-                    if !Task.isCancelled {
-                        isAuthRequired = channels.isEmpty
-                        subscribedChannels = channels
-                        videoGroups = []
-                        let chCount = subscribedChannels.count
-                        let authReq = isAuthRequired
-                        browseLog.notice("channels state set: subscribedChannels=\(chCount) isAuthRequired=\(authReq)")
-                        // Background-enrich avatars — the guide/params approaches yield no thumbnails;
-                        // fetch each channel's About tab concurrently to get the avatar URL.
-                        if !channels.isEmpty {
-                            enrichTask?.cancel()
-                            enrichTask = Task { await self.enrichChannelAvatars() }
-                        }
-                    }
-                } else {
-                    let localChannels = await LocalSubscriptionStore.shared.allChannels()
-                    browseLog.notice("channels (local): \(localChannels.count) followed channels, isCancelled=\(Task.isCancelled)")
-                    if !Task.isCancelled {
-                        isAuthRequired = false
-                        subscribedChannels = localChannels.map { $0.toChannel() }
-                        videoGroups = []
-                    }
-                }
-
-            case .shorts:
-                let group = try await api.fetchShorts()
-                if !Task.isCancelled { videoGroups = [group] }
-
-            case .music:
-                let group = try await api.fetchMusic()
-                if !Task.isCancelled { videoGroups = [group] }
-
-            case .gaming:
-                let group = try await api.fetchGaming()
-                if !Task.isCancelled { videoGroups = [group] }
-
-            case .news:
-                let group = try await api.fetchNews()
-                if !Task.isCancelled { videoGroups = [group] }
-
-            case .live:
-                let group = try await api.fetchLive()
-                if !Task.isCancelled { videoGroups = [group] }
-
-            case .sports:
-                let group = try await api.fetchSports()
-                if !Task.isCancelled { videoGroups = [group] }
-
-            case .settings:
+        case .recommended:
+            // UI-testing injection: bypass the network fetch when
+            // `--uitesting-inject-recommended-ids=<id1,id2,...>` is present.
+            // Allows Recommended chip tests to run on unauthenticated parallel
+            // simulator clones without auth or visitor-session dependency.
+            if let arg = ProcessInfo.processInfo.arguments.first(where: {
+                $0.hasPrefix("--uitesting-inject-recommended-ids=")
+            }) {
+                let raw = String(arg.dropFirst("--uitesting-inject-recommended-ids=".count))
+                let ids = raw.split(separator: ",").map(String.init).filter { !$0.isEmpty }
+                guard !ids.isEmpty, !Task.isCancelled else { break }
+                let videos = ids.map { InternalVideo(id: $0, title: $0, channelTitle: "Test Channel") }
+                isAuthRequired = false
+                recommendedUsesSearchFallback = false
+                videoGroups = [InternalVideoGroup(title: "Recommended", videos: videos)]
                 break
             }
-            if !Task.isCancelled { loadedAt = Date() }
+            let group = try await api.fetchHome()
+            // Fetch Shorts in parallel: dedicated search + subs feed.
+            // FEshorts browseId is deprecated (HTTP 400). The subs TV-browse
+            // (tileRenderer, ustreamerConfig "GgIIBQ==") is the most reliable
+            // source of many Shorts — mirrors HomeViewModel.homeShortsInternalVideos.
+            async let shortsFetch: InternalVideoGroup? = try? api.fetchShorts()
+            async let subsFetch: InternalVideoGroup? = try? api.fetchSubscriptions()
+            let (shortsGroup, subsGroup) = await (shortsFetch, subsFetch)
+            if !Task.isCancelled {
+                let searchShorts = shortsGroup?.videos ?? []
+                let subsShorts = (subsGroup?.videos ?? []).filter(\.isShort)
+                let homeShorts = group.videos.filter(\.isShort)
+                var seen = Set<String>()
+                recommendedShortsInternalVideos = (searchShorts + subsShorts + homeShorts)
+                    .filter { seen.insert($0.id).inserted }
+                browseLog.notice("Recommended: \(recommendedShortsInternalVideos.count) shorts (search=\(searchShorts.count) subs=\(subsShorts.count) home=\(homeShorts.count))")
+                if group.videos.isEmpty {
+                    isAuthRequired = true
+                    recommendedUsesSearchFallback = true
+                    let popular = try await api.search(query: "popular")
+                    browseLog.notice("Recommended: home feed empty, using search fallback (nextToken=\(popular.nextPageToken != nil))")
+                    var deduped = popular
+                    deduped.videos = deduplicated(popular.videos)
+                    videoGroups = [deduped]
+                } else {
+                    isAuthRequired = false
+                    recommendedUsesSearchFallback = false
+                    var deduped = group
+                    deduped.videos = deduplicated(group.videos)
+                    videoGroups = [deduped]
+                }
+            }
+
+        case .subscriptions:
+            if hasAuthToken {
+                let group = try await api.fetchSubscriptions()
+                if !Task.isCancelled {
+                    isAuthRequired = group.videos.isEmpty
+                    var deduped = group
+                    deduped.videos = deduplicated(group.videos)
+                    videoGroups = deduped.videos.isEmpty ? [] : [deduped]
+                }
+            } else {
+                let videos = await LocalSubscriptionFeedService.shared.fetchFeed(api: api)
+                if !Task.isCancelled {
+                    isAuthRequired = false
+                    let deduped = deduplicated(videos)
+                    videoGroups = deduped.isEmpty ? [] : [InternalVideoGroup(title: "Subscriptions", videos: deduped)]
+                }
+            }
+
+        case .history:
+            guard historyEnabled else {
+                if !Task.isCancelled { videoGroups = []; isAuthRequired = false }
+                return
+            }
+            let group = try await api.fetchHistory()
+            if !Task.isCancelled {
+                isAuthRequired = group.videos.isEmpty
+                videoGroups = group.videos.isEmpty ? [] : [group]
+            }
+
+        case .playlists:
+            let playlists = try await api.fetchUserPlaylists()
+            if !Task.isCancelled {
+                isAuthRequired = playlists.isEmpty
+                // Convert PlaylistInfo list into a InternalVideoGroup of placeholder videos
+                let videos = playlists.map { pl -> InternalVideo in
+                    InternalVideo(
+                        id: pl.id,
+                        title: pl.title,
+                        channelTitle: pl.videoCount.map { "\($0) videos" } ?? "",
+                        thumbnailURL: pl.thumbnailURL,
+                        playlistId: pl.id
+                    )
+                }
+                videoGroups = videos.isEmpty ? [] : [InternalVideoGroup(title: "Playlists", videos: videos)]
+            }
+
+        case .channels:
+            if hasAuthToken {
+                let channels = try await api.fetchSubscribedChannels()
+                browseLog.notice("channels fetch complete: \(channels.count) channels, isCancelled=\(Task.isCancelled)")
+                if !Task.isCancelled {
+                    isAuthRequired = channels.isEmpty
+                    subscribedChannels = channels
+                    videoGroups = []
+                    let chCount = subscribedChannels.count
+                    let authReq = isAuthRequired
+                    browseLog.notice("channels state set: subscribedChannels=\(chCount) isAuthRequired=\(authReq)")
+                    // Background-enrich avatars — the guide/params approaches yield no thumbnails;
+                    // fetch each channel's About tab concurrently to get the avatar URL.
+                    if !channels.isEmpty {
+                        enrichTask?.cancel()
+                        enrichTask = Task { await self.enrichChannelAvatars() }
+                    }
+                }
+            } else {
+                let localChannels = await LocalSubscriptionStore.shared.allChannels()
+                browseLog.notice("channels (local): \(localChannels.count) followed channels, isCancelled=\(Task.isCancelled)")
+                if !Task.isCancelled {
+                    isAuthRequired = false
+                    subscribedChannels = localChannels.map { $0.toChannel() }
+                    videoGroups = []
+                }
+            }
+
+        case .shorts:
+            let group = try await api.fetchShorts()
+            if !Task.isCancelled { videoGroups = [group] }
+
+        case .music:
+            let group = try await api.fetchMusic()
+            if !Task.isCancelled { videoGroups = [group] }
+
+        case .gaming:
+            let group = try await api.fetchGaming()
+            if !Task.isCancelled { videoGroups = [group] }
+
+        case .news:
+            let group = try await api.fetchNews()
+            if !Task.isCancelled { videoGroups = [group] }
+
+        case .live:
+            let group = try await api.fetchLive()
+            if !Task.isCancelled { videoGroups = [group] }
+
+        case .sports:
+            let group = try await api.fetchSports()
+            if !Task.isCancelled { videoGroups = [group] }
+
+        case .settings:
+            break
+        }
+        if !Task.isCancelled { loadedAt = Date() }
     }
 
     private func fetchNextPage(for section: BrowseSection, autoChainDepth: Int = 0) async {
@@ -551,13 +563,14 @@ public final class BrowseViewModel {
                     // grow). Immediately fetch the next page so history keeps loading.
                     if autoChainDepth < 5,
                        group.videos.allSatisfy(\.isShort),
-                       group.nextPageToken != nil {
+                       group.nextPageToken != nil
+                    {
                         browseLog.notice("fetchNextPage auto-chain (all-Shorts page): section=\(section.title) depth=\(autoChainDepth)")
                         await fetchNextPage(for: section, autoChainDepth: autoChainDepth + 1)
                     }
                 }
             case .channels:
-                break  // channel list doesn't paginate via videoGroups
+                break // channel list doesn't paginate via videoGroups
             case .shorts:
                 let group = try await retryWithBackoff(label: "BrowseVM[\(section.title)]") {
                     try await api.fetchShorts()
@@ -690,8 +703,8 @@ public final class BrowseViewModel {
             }
         }
 
-        let finalCount = self.subscribedChannels.filter { $0.thumbnailURL != nil }.count
-        let total = self.subscribedChannels.count
+        let finalCount = subscribedChannels.count(where: { $0.thumbnailURL != nil })
+        let total = subscribedChannels.count
         browseLog.notice("enrichChannelAvatars done: \(finalCount)/\(total) have avatars")
     }
 }

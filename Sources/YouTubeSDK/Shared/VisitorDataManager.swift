@@ -9,7 +9,6 @@ import Foundation
 
 /// Manages fetching and caching of YouTube's `visitorData` token.
 public actor VisitorDataManager {
-
     private var visitorData: String?
     private var fetchedAt: Date?
     private let ttl: TimeInterval = 20 * 60 // 20 minutes
@@ -31,21 +30,22 @@ public actor VisitorDataManager {
             "context": [
                 "client": [
                     "clientName": ClientConfig.web.name,
-                    "clientVersion": ClientConfig.web.version
-                ]
-            ]
+                    "clientVersion": ClientConfig.web.version,
+                ],
+            ],
         ]
 
         let data = try await network.sendComplexRequest("visitor_id", body: body)
 
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let responseContext = json["responseContext"] as? [String: Any],
-              let visitor = responseContext["visitorData"] as? String else {
+              let visitor = responseContext["visitorData"] as? String
+        else {
             return nil
         }
 
-        self.visitorData = visitor
-        self.fetchedAt = Date()
+        visitorData = visitor
+        fetchedAt = Date()
         return visitor
     }
 

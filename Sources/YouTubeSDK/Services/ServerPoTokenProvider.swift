@@ -1,7 +1,7 @@
 import Foundation
 
-
 // MARK: - ServerPoTokenProvider
+
 //
 // Proof-of-Origin token provider that calls a user-configured self-hosted microservice.
 // Intended as a developer/testing tool to validate poToken injection plumbing end-to-end
@@ -31,12 +31,13 @@ public struct ServerPoTokenProvider: PoTokenProvider {
         request.httpBody = try JSONSerialization.data(withJSONObject: ["videoId": videoId])
         request.timeoutInterval = 10
         let (data, response) = try await session.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             throw APIError.httpError(code)
         }
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let token = json["token"] as? String, !token.isEmpty else {
+              let token = json["token"] as? String, !token.isEmpty
+        else {
             throw APIError.decodingError("ServerPoTokenProvider: missing 'token' in response")
         }
         return token

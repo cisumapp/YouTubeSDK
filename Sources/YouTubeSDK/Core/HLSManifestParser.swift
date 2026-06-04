@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - HLS Master Manifest Parser
+
 //
 // Parses an HLS master playlist (M3U8) and returns a map of stream height → variant URL.
 // Extracted from PlaybackQualityManager.fetchHLSVariantURLs (task #133, SRP-1).
@@ -21,7 +22,7 @@ public func parseHLSMasterManifest(_ manifestText: String, baseURL: URL) -> [Int
     var variantIsH264: [Int: Bool] = [:]
     let lines = manifestText.components(separatedBy: .newlines)
     var pendingHeight: Int? = nil
-    var pendingIsH264: Bool = false
+    var pendingIsH264 = false
 
     for line in lines {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -33,7 +34,8 @@ public func parseHLSMasterManifest(_ manifestText: String, baseURL: URL) -> [Int
             if let range = trimmed.range(of: #"RESOLUTION=\d+x(\d+)"#, options: .regularExpression) {
                 let match = String(trimmed[range])
                 if let xIdx = match.firstIndex(of: "x"),
-                   let height = Int(match[match.index(after: xIdx)...]) {
+                   let height = Int(match[match.index(after: xIdx)...])
+                {
                     pendingHeight = height
                 }
             }
@@ -42,11 +44,10 @@ public func parseHLSMasterManifest(_ manifestText: String, baseURL: URL) -> [Int
             }
 
         } else if !trimmed.hasPrefix("#"), !trimmed.isEmpty, let height = pendingHeight {
-            let variantURL: URL?
-            if trimmed.hasPrefix("http") {
-                variantURL = URL(string: trimmed)
+            let variantURL: URL? = if trimmed.hasPrefix("http") {
+                URL(string: trimmed)
             } else {
-                variantURL = URL(string: trimmed, relativeTo: baseURL).map { $0.absoluteURL }
+                URL(string: trimmed, relativeTo: baseURL).map(\.absoluteURL)
             }
 
             if let resolvedURL = variantURL {
@@ -54,13 +55,13 @@ public func parseHLSMasterManifest(_ manifestText: String, baseURL: URL) -> [Int
                     variants[height] = resolvedURL
                     variantIsH264[height] = pendingIsH264
                 } else {
-#if !os(tvOS)
+                    #if !os(tvOS)
                     // iOS/macOS: upgrade HEVC variant to H.264 if one arrives later.
-                    if !(variantIsH264[height] ?? false) && pendingIsH264 {
+                    if !(variantIsH264[height] ?? false), pendingIsH264 {
                         variants[height] = resolvedURL
                         variantIsH264[height] = true
                     }
-#endif
+                    #endif
                 }
             }
             pendingHeight = nil

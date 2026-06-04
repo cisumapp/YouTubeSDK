@@ -13,11 +13,11 @@ public enum BotGuardError: Error, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case .challengeFailed(let m):       "BotGuard challenge fetch failed: \(m)"
-        case .challengeParseError(let m):   "BotGuard challenge parse error: \(m)"
-        case .jsFailed(let m):              "BotGuard JS error: \(m)"
-        case .integrityTokenFailed(let m):  "BotGuard integrity token failed: \(m)"
-        case .mintFailed(let m):            "BotGuard mint failed: \(m)"
+        case let .challengeFailed(m): "BotGuard challenge fetch failed: \(m)"
+        case let .challengeParseError(m): "BotGuard challenge parse error: \(m)"
+        case let .jsFailed(m): "BotGuard JS error: \(m)"
+        case let .integrityTokenFailed(m): "BotGuard integrity token failed: \(m)"
+        case let .mintFailed(m): "BotGuard mint failed: \(m)"
         }
     }
 }
@@ -37,16 +37,17 @@ public enum BotGuardError: Error, CustomStringConvertible {
 /// Network calls use `URLSession.dataTask` + `DispatchSemaphore` — safe because `jsQueue` is not part of
 /// Swift's cooperative concurrency thread pool.
 public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
-
     // MARK: - WAA API constants
-    // Public API key used by YouTube's web client; from BgUtils / YouTube JS source.
-    private static let waaAPIKey  = "AIzaSyDyT5W0Jh49F30Pqqtyfdf7pDLFKLJoAnw"
+
+    /// Public API key used by YouTube's web client; from BgUtils / YouTube JS source.
+    private static let waaAPIKey = "AIzaSyDyT5W0Jh49F30Pqqtyfdf7pDLFKLJoAnw"
     // YouTube BotGuard request key (stable; from BgUtils examples).
     private static let requestKey = "O43z0dpjhgX20SCx4KAo"
-    private static let waaCreateURL     = URL(string: "https://jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/Create")!
+    private static let waaCreateURL = URL(string: "https://jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/Create")!
     private static let waaGenerateITURL = URL(string: "https://jnn-pa.googleapis.com/$rpc/google.internal.waa.v1.Waa/GenerateIT")!
 
     // MARK: - Properties
+
     private let session: URLSession
     private let bgLog = Logger(subsystem: appSubsystem, category: "BotGuard")
     /// All JSContext access serialised on this queue. It is a real OS thread, so
@@ -98,12 +99,12 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
         var req = URLRequest(url: Self.waaCreateURL, timeoutInterval: 12)
         req.httpMethod = "POST"
         req.setValue("application/json+protobuf", forHTTPHeaderField: "Content-Type")
-        req.setValue(Self.waaAPIKey,              forHTTPHeaderField: "x-goog-api-key")
-        req.setValue("grpc-web-javascript/0.1",   forHTTPHeaderField: "x-user-agent")
+        req.setValue(Self.waaAPIKey, forHTTPHeaderField: "x-goog-api-key")
+        req.setValue("grpc-web-javascript/0.1", forHTTPHeaderField: "x-user-agent")
         req.httpBody = try JSONSerialization.data(withJSONObject: [Self.requestKey])
 
         let (data, response) = try await session.data(for: req)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
             throw BotGuardError.challengeFailed("HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)")
         }
 
@@ -117,7 +118,8 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
         // to distinguish the direct layout (≥5 string elements) from the nested layout
         // (1 element that is itself the [messageId, hash, url, program, globalName] array).
         guard let outer = try? JSONSerialization.jsonObject(with: data) as? [Any],
-              outer.count >= 2 else {
+              outer.count >= 2
+        else {
             throw BotGuardError.challengeParseError("outer array missing")
         }
         bgLog.notice("[BotGuard] outer array count=\(outer.count) types=\(outer.map { type(of: $0) }, privacy: .public)")
@@ -158,7 +160,8 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
             if outer.count >= 4,
                let urlRaw = outer[2] as? String, !urlRaw.isEmpty,
                let program = outer[1] as? String, !program.isEmpty,
-               let globalName = outer[3] as? String, !globalName.isEmpty {
+               let globalName = outer[3] as? String, !globalName.isEmpty
+            {
                 bgLog.notice("[BotGuard] JSPB outer[2/3] schema: url=\(String(urlRaw.prefix(60)), privacy: .public) globalName=\(globalName, privacy: .public)")
                 let js = try await fetchInterpreterJS(from: urlRaw)
                 return BotGuardChallenge(interpreterJS: js, program: program, globalName: globalName)
@@ -175,12 +178,12 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
             let rawBytes = [UInt8](protoBytes)
             var urlScanPos = 0
             while urlScanPos <= rawBytes.count - httpSig.count {
-                if rawBytes[urlScanPos..<urlScanPos + httpSig.count].elementsEqual(httpSig) {
+                if rawBytes[urlScanPos ..< urlScanPos + httpSig.count].elementsEqual(httpSig) {
                     var urlEnd = urlScanPos + httpSig.count
-                    while urlEnd < rawBytes.count && rawBytes[urlEnd] > 0x20 && rawBytes[urlEnd] < 0x80 {
+                    while urlEnd < rawBytes.count, rawBytes[urlEnd] > 0x20, rawBytes[urlEnd] < 0x80 {
                         urlEnd += 1
                     }
-                    if let foundURL = String(bytes: rawBytes[urlScanPos..<urlEnd], encoding: .utf8) {
+                    if let foundURL = String(bytes: rawBytes[urlScanPos ..< urlEnd], encoding: .utf8) {
                         bgLog.notice("[BotGuard] embedded URL at byte \(urlScanPos): \(foundURL, privacy: .public)")
                     }
                 }
@@ -205,7 +208,8 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
             // Strategy A: flat top-level fields (fields 2, 5, 6 present directly).
             if let urlRaw = topStr[2], !urlRaw.isEmpty,
                let program = topStr[5], !program.isEmpty,
-               let globalName = topStr[6], !globalName.isEmpty {
+               let globalName = topStr[6], !globalName.isEmpty
+            {
                 bgLog.notice("[BotGuard] JSPB flat schema → url=\(String(urlRaw.prefix(60)), privacy: .public)")
                 let js = try await fetchInterpreterJS(from: urlRaw)
                 return BotGuardChallenge(interpreterJS: js, program: program, globalName: globalName)
@@ -222,7 +226,8 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
                 let innerStr = innerFields.compactMapValues { String(data: $0, encoding: .utf8) }
                 if let urlRaw = innerStr[2], !urlRaw.isEmpty,
                    let program = innerStr[5], !program.isEmpty,
-                   let globalName = innerStr[6], !globalName.isEmpty {
+                   let globalName = innerStr[6], !globalName.isEmpty
+                {
                     bgLog.notice("[BotGuard] JSPB nested schema → url=\(String(urlRaw.prefix(60)), privacy: .public)")
                     let js = try await fetchInterpreterJS(from: urlRaw)
                     return BotGuardChallenge(interpreterJS: js, program: program, globalName: globalName)
@@ -247,10 +252,10 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
         // When 5+ elements: [msgId, hash, url, program, globalName]
         // When 4 elements:  [hash, url, program, globalName]  (no messageId)
         let hasMessageId = inner.count >= 5
-        let hashIdx    = hasMessageId ? 1 : 0
-        let urlIdx     = hasMessageId ? 2 : 1
+        let hashIdx = hasMessageId ? 1 : 0
+        let urlIdx = hasMessageId ? 2 : 1
         let programIdx = hasMessageId ? 3 : 2
-        let nameIdx    = hasMessageId ? 4 : 3
+        let nameIdx = hasMessageId ? 4 : 3
         bgLog.notice("[BotGuard] inner count=\(inner.count) hasMessageId=\(hasMessageId)")
 
         var interpreterJS = ""
@@ -280,7 +285,7 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
             bgLog.notice("[BotGuard] interpreter JS fetched from URL (len=\(js.count))")
             return js
         }
-        return raw  // raw is inline JS
+        return raw // raw is inline JS
     }
 
     /// Fetches YouTube's current player JS by extracting the player URL from the homepage.
@@ -307,12 +312,12 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
         for pattern in patterns {
             if let regex = try? NSRegularExpression(pattern: pattern),
                let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
-               let range = Range(match.range(at: 1), in: html) {
+               let range = Range(match.range(at: 1), in: html)
+            {
                 let path = String(html[range])
-                let fullURL: String
-                if path.hasPrefix("//")   { fullURL = "https:\(path)" }
-                else if path.hasPrefix("http") { fullURL = path }
-                else                       { fullURL = "https://www.youtube.com\(path)" }
+                let fullURL: String = if path.hasPrefix("//") { "https:\(path)" }
+                else if path.hasPrefix("http") { path }
+                else { "https://www.youtube.com\(path)" }
                 bgLog.notice("[BotGuard] player JS URL: \(String(fullURL.prefix(80)), privacy: .public)")
                 return try await fetchInterpreterJS(from: fullURL)
             }
@@ -353,25 +358,25 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
             let wireType = Int(tag & 7)
 
             switch wireType {
-            case 0:  // varint — skip
+            case 0: // varint — skip
                 guard let (_, p2) = readVarint(from: bytes, at: pos) else { return fields }
                 pos = p2
-            case 1:  // 64-bit — skip
+            case 1: // 64-bit — skip
                 guard pos + 8 <= bytes.count else { return fields }
                 pos += 8
-            case 2:  // length-delimited — capture
+            case 2: // length-delimited — capture
                 guard let (len, p2) = readVarint(from: bytes, at: pos) else { return fields }
                 pos = p2
                 let end = pos + Int(len)
                 guard end <= bytes.count else { return fields }
                 let startIdx = data.index(data.startIndex, offsetBy: pos)
-                let endIdx   = data.index(data.startIndex, offsetBy: end)
-                fields[fieldNum] = data[startIdx..<endIdx]
+                let endIdx = data.index(data.startIndex, offsetBy: end)
+                fields[fieldNum] = data[startIdx ..< endIdx]
                 pos = end
-            case 3:  // start group (proto2, deprecated) — skip until matching end group
+            case 3: // start group (proto2, deprecated) — skip until matching end group
                 let groupField = fieldNum
                 var depth = 1
-                groupLoop: while pos < bytes.count && depth > 0 {
+                groupLoop: while pos < bytes.count, depth > 0 {
                     guard let (innerTag, innerP) = readVarint(from: bytes, at: pos) else { break groupLoop }
                     pos = innerP
                     let iWire = Int(innerTag & 7)
@@ -390,13 +395,13 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
                     default: break groupLoop
                     }
                 }
-            case 4:  // end group (unexpected at top level) — stop
+            case 4: // end group (unexpected at top level) — stop
                 return fields
-            case 5:  // 32-bit — skip
+            case 5: // 32-bit — skip
                 guard pos + 4 <= bytes.count else { return fields }
                 pos += 4
             default:
-                return fields  // unknown wire type → stop parsing
+                return fields // unknown wire type → stop parsing
             }
         }
         return fields
@@ -408,7 +413,6 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
     /// JS VM execution → integrity token fetch (blocking) → mint (JS).
     /// Must be called from `jsQueue` only.
     private func runPipelineSync(challenge: BotGuardChallenge, videoId: String) throws -> String {
-
         // --- Set up JSContext with minimal polyfills ---
         guard let ctx = JSContext() else {
             throw BotGuardError.jsFailed("JSContext() returned nil")
@@ -457,8 +461,8 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
         let vmFnCallback: @convention(block) (JSValue, JSValue, JSValue, JSValue) -> Void = { fn, _, _, _ in
             asyncSnapshotFn = fn
         }
-        let undef    = JSValue(undefinedIn: ctx)!
-        let noopFn   = JSValue(object: { } as @convention(block) () -> Void, in: ctx)!
+        let undef = JSValue(undefinedIn: ctx)!
+        let noopFn = JSValue(object: {} as @convention(block) () -> Void, in: ctx)!
         let initPair = ctx.evaluateScript("[[],[]]")!
 
         // invokeMethod sets this=vm, required by the real BotGuard VM's internal methods.
@@ -468,14 +472,15 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
             NSNumber(value: true),
             undef,
             noopFn,
-            initPair
+            initPair,
         ])
 
         if let exc = ctx.exception { throw BotGuardError.jsFailed("vm.a(): \(exc)") }
 
         // vm.a() may return [syncFn, ...] or [Promise, ...]; pump microtasks either way.
         if let initPromise = vmCallResult?.objectAtIndexedSubscript(0),
-           initPromise.objectForKeyedSubscript("then")?.isObject == true {
+           initPromise.objectForKeyedSubscript("then")?.isObject == true
+        {
             _ = try resolvePromise(initPromise, in: ctx, label: "vm.a() init")
         } else {
             pumpMicrotasks(ctx, count: 3)
@@ -487,7 +492,7 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
 
         // --- Phase 3: asyncSnapshotFn(callback, [undefined, undefined, webPoSignalOutput, undefined]) ---
         var botguardResponse: String?
-        let webPoSignalOutput = ctx.evaluateScript("[]")!   // JS array, populated by VM
+        let webPoSignalOutput = ctx.evaluateScript("[]")! // JS array, populated by VM
         ctx.setObject(webPoSignalOutput, forKeyedSubscript: "__bgSO" as NSString)
 
         let snapCallback: @convention(block) (JSValue) -> Void = { response in
@@ -497,10 +502,10 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
 
         snapFn.call(withArguments: [
             JSValue(object: snapCallback, in: ctx)!,
-            snapArgs
+            snapArgs,
         ])
         if let exc = ctx.exception { throw BotGuardError.jsFailed("asyncSnapshotFn: \(exc)") }
-        pumpMicrotasks(ctx, count: 5)   // flush in case callback fires asynchronously
+        pumpMicrotasks(ctx, count: 5) // flush in case callback fires asynchronously
 
         guard let bgResponse = botguardResponse, !bgResponse.isEmpty else {
             throw BotGuardError.jsFailed("botguard response empty after asyncSnapshotFn")
@@ -526,8 +531,8 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
         var req = URLRequest(url: Self.waaGenerateITURL, timeoutInterval: 12)
         req.httpMethod = "POST"
         req.setValue("application/json+protobuf", forHTTPHeaderField: "Content-Type")
-        req.setValue(Self.waaAPIKey,              forHTTPHeaderField: "x-goog-api-key")
-        req.setValue("grpc-web-javascript/0.1",   forHTTPHeaderField: "x-user-agent")
+        req.setValue(Self.waaAPIKey, forHTTPHeaderField: "x-goog-api-key")
+        req.setValue("grpc-web-javascript/0.1", forHTTPHeaderField: "x-user-agent")
         req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
 
         var result: Result<String, Error>?
@@ -538,7 +543,8 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
             if let error { result = .failure(error); return }
             guard let data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [Any],
-                  let token = json.first as? String, !token.isEmpty else {
+                  let token = json.first as? String, !token.isEmpty
+            else {
                 result = .failure(BotGuardError.integrityTokenFailed(
                     "HTTP \((response as? HTTPURLResponse)?.statusCode ?? -1)"
                 ))
@@ -554,7 +560,6 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
     // MARK: - Phase 5: mint (JS, on jsQueue)
 
     private func mintSync(ctx: JSContext, signalOutput: JSValue, integrityB64: String, videoId: String) throws -> String {
-
         // Decode integrity token bytes
         guard let integrityData = Data(base64Encoded: integrityB64) else {
             throw BotGuardError.mintFailed("integrityToken base64 decode failed")
@@ -565,7 +570,8 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
 
         // getMinter = webPoSignalOutput[0]  (a function set by the VM during asyncSnapshotFn)
         guard let getMinterFn = signalOutput.objectAtIndexedSubscript(0),
-              !getMinterFn.isNull, !getMinterFn.isUndefined else {
+              !getMinterFn.isNull, !getMinterFn.isUndefined
+        else {
             throw BotGuardError.mintFailed("webPoSignalOutput[0] (getMinter) not set")
         }
 
@@ -592,7 +598,7 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
         var tokenBytes = Data()
         if let lengthVal = tokenValue.objectForKeyedSubscript("length"), lengthVal.isNumber {
             let length = Int(lengthVal.toInt32())
-            for i in 0..<length {
+            for i in 0 ..< length {
                 let byte = tokenValue.objectAtIndexedSubscript(i).toUInt32()
                 tokenBytes.append(UInt8(byte & 0xFF))
             }
@@ -646,18 +652,25 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
             return 0
         }
         ctx.setObject(setTimeoutFn, forKeyedSubscript: "setTimeout" as NSString)
-        ctx.setObject({ (_: JSValue, _: JSValue) -> NSNumber in 0 } as @convention(block) (JSValue, JSValue) -> NSNumber,
-                      forKeyedSubscript: "setInterval" as NSString)
-        ctx.setObject({ (_: NSNumber) in } as @convention(block) (NSNumber) -> Void,
-                      forKeyedSubscript: "clearTimeout" as NSString)
-        ctx.setObject({ (_: NSNumber) in } as @convention(block) (NSNumber) -> Void,
-                      forKeyedSubscript: "clearInterval" as NSString)
+        ctx.setObject(
+            { (_: JSValue, _: JSValue) -> NSNumber in 0 } as @convention(block) (JSValue, JSValue) -> NSNumber,
+            forKeyedSubscript: "setInterval" as NSString
+        )
+        ctx.setObject(
+            { (_: NSNumber) in } as @convention(block) (NSNumber) -> Void,
+            forKeyedSubscript: "clearTimeout" as NSString
+        )
+        ctx.setObject(
+            { (_: NSNumber) in } as @convention(block) (NSNumber) -> Void,
+            forKeyedSubscript: "clearInterval" as NSString
+        )
     }
 
     /// Builds a JS `Uint8Array` from `Data`. Used for passing byte arrays across the Swift/JS bridge.
     private func buildUint8Array(from data: Data, in ctx: JSContext, label: String) throws -> JSValue {
         guard let arr = ctx.evaluateScript("new Uint8Array(\(data.count))"),
-              !arr.isNull, !arr.isUndefined else {
+              !arr.isNull, !arr.isUndefined
+        else {
             throw BotGuardError.mintFailed("Uint8Array(\(label)) creation failed")
         }
         for (i, byte) in data.enumerated() {
@@ -669,7 +682,9 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
     /// Pumps pending JSC microtasks by re-entering the JS engine.
     /// Each call to `evaluateScript` creates a drain-point where JSC flushes its microtask queue.
     private func pumpMicrotasks(_ ctx: JSContext, count: Int) {
-        for _ in 0..<count { ctx.evaluateScript("undefined") }
+        for _ in 0 ..< count {
+            ctx.evaluateScript("undefined")
+        }
     }
 
     /// Resolves a JS Promise synchronously using a pure-JS then-handler that writes
@@ -708,9 +723,10 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
 
         // Read result — usually set during the evaluateScript above; pump more if needed
         // (e.g. multi-hop Promise chains that require additional microtask turns).
-        for _ in 0..<maxPumps {
+        for _ in 0 ..< maxPumps {
             if let r = ctx.evaluateScript("globalThis.__bgR"),
-               !r.isNull, !r.isUndefined {
+               !r.isNull, !r.isUndefined
+            {
                 ctx.evaluateScript("delete globalThis.__bgR")
                 if r.objectForKeyedSubscript("ok")?.toInt32() == 1 {
                     return r.objectForKeyedSubscript("v") ?? JSValue(undefinedIn: ctx)!
@@ -719,7 +735,7 @@ public final class BotGuardClient: PoTokenProvider, @unchecked Sendable {
                     throw BotGuardError.jsFailed("Promise '\(label)' rejected: \(err)")
                 }
             }
-            ctx.evaluateScript("undefined")   // additional microtask drain
+            ctx.evaluateScript("undefined") // additional microtask drain
         }
 
         throw BotGuardError.jsFailed("Promise '\(label)' did not settle after \(maxPumps) pumps")

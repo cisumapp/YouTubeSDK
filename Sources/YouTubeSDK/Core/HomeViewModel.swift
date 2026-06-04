@@ -5,6 +5,7 @@ import os
 private let homeLog = ViewModelLogger(category: "Home")
 
 // MARK: - HomeViewModel
+
 //
 // Fetches Subscriptions and Recommended shelves in parallel
 // to populate the Home tab's multi-section feed.
@@ -12,7 +13,6 @@ private let homeLog = ViewModelLogger(category: "Home")
 @MainActor
 @Observable
 public final class HomeViewModel {
-
     // MARK: - Section state
 
     public struct SectionState: Identifiable {
@@ -21,8 +21,10 @@ public final class HomeViewModel {
         public var isLoading: Bool = true
         public var isLoadingMore: Bool = false
         public var hasFailed: Bool = false
-        public var nextPageToken: String? = nil
-        public var id: String { section.id }
+        public var nextPageToken: String?
+        public var id: String {
+            section.id
+        }
     }
 
     // MARK: - State
@@ -31,16 +33,16 @@ public final class HomeViewModel {
     /// Shorts fetched explicitly via FEshorts (TV home feed never includes them).
     public private(set) var shortsInternalVideos: [InternalVideo] = []
     /// Continuation token from the last FEshorts fetch; used by loadMoreShortsIfNeeded.
-    private var shortsNextPageToken: String? = nil
+    private var shortsNextPageToken: String?
     private var isLoadingMoreShorts: Bool = false
     public private(set) var isRefreshing: Bool = false
     /// Timestamp of the last successful load. Used for staleness checks.
-    public private(set) var loadedAt: Date? = nil
+    public private(set) var loadedAt: Date?
 
     // MARK: - Shelf definitions (in display order)
 
     public static let shelfSections: [BrowseSection] = [
-        BrowseSection(id: BrowseSection.SectionType.home.rawValue,          title: "Recommended",   type: .home),
+        BrowseSection(id: BrowseSection.SectionType.home.rawValue, title: "Recommended", type: .home),
         BrowseSection(id: BrowseSection.SectionType.subscriptions.rawValue, title: "Subscriptions", type: .subscriptions),
     ]
 
@@ -59,10 +61,10 @@ public final class HomeViewModel {
     /// recommended videos.  Subscription videos that duplicate an already-seen
     /// recommended ID are skipped.
     public var mergedInternalVideos: [InternalVideo] {
-        let recState  = sections.first { $0.section.type == .home }
-        let subState  = sections.first { $0.section.type == .subscriptions }
-        let recs  = recState?.videos  ?? []
-        let subs  = subState?.videos  ?? []
+        let recState = sections.first { $0.section.type == .home }
+        let subState = sections.first { $0.section.type == .subscriptions }
+        let recs = recState?.videos ?? []
+        let subs = subState?.videos ?? []
 
         guard !subs.isEmpty else {
             var seen = Set<String>()
@@ -112,7 +114,9 @@ public final class HomeViewModel {
 
     /// Non-Short videos from the interleaved home feed.
     /// Used by `homeShelves` to populate the main grid (Shorts are shown separately).
-    public var homeRegularInternalVideos: [InternalVideo] { mergedInternalVideos.filter { !$0.isShort } }
+    public var homeRegularInternalVideos: [InternalVideo] {
+        mergedInternalVideos.filter { !$0.isShort }
+    }
 
     /// Short videos for the dedicated Shorts row.
     /// Sources (in priority order, deduplicated by video ID):
@@ -121,9 +125,9 @@ public final class HomeViewModel {
     ///     they are not lost to the home/subs interleave ratio in `mergedInternalVideos`
     ///  3. `mergedInternalVideos` shorts — catches any shorts from the home-rec feed
     public var homeShortsInternalVideos: [InternalVideo] {
-        let subsShorts = sections.first { $0.section.type == .subscriptions }?.videos.filter { $0.isShort } ?? []
+        let subsShorts = sections.first { $0.section.type == .subscriptions }?.videos.filter(\.isShort) ?? []
         var seen = Set<String>()
-        return (shortsInternalVideos + subsShorts + mergedInternalVideos.filter { $0.isShort })
+        return (shortsInternalVideos + subsShorts + mergedInternalVideos.filter(\.isShort))
             .filter { seen.insert($0.id).inserted }
     }
 
@@ -149,13 +153,13 @@ public final class HomeViewModel {
         hideObserverTasks.append(Task { [weak self] in
             for await note in NotificationCenter.default.notifications(named: .hideInternalVideoFromFeed) {
                 guard let self, let videoId = note.userInfo?["videoId"] as? String else { continue }
-                self.removeInternalVideo(id: videoId)
+                removeInternalVideo(id: videoId)
             }
         })
         hideObserverTasks.append(Task { [weak self] in
             for await note in NotificationCenter.default.notifications(named: .hideChannelFromFeed) {
                 guard let self, let channelId = note.userInfo?["channelId"] as? String else { continue }
-                self.removeChannel(id: channelId)
+                removeChannel(id: channelId)
             }
         })
     }
@@ -220,7 +224,7 @@ public final class HomeViewModel {
             isRefreshing = false
             loadedAt = Date()
             let merged = self.mergedInternalVideos
-            let mergedShorts = merged.filter { $0.isShort }.count
+            let mergedShorts = merged.count(where: { $0.isShort })
             homeLog.notice("load complete: merged=\(merged.count) regular=\(merged.count - mergedShorts) mergedShorts=\(mergedShorts) shortsSection=\(shortsInternalVideos.count)")
         }
     }
@@ -229,7 +233,7 @@ public final class HomeViewModel {
         let wasAuthenticated = hasAuthToken
         hasAuthToken = token != nil
         await api.setAuthToken(token)
-        if token != nil && !wasAuthenticated {
+        if token != nil, !wasAuthenticated {
             // Only reload on sign-in (nil → token). Token refreshes that happen
             // during video playback keep the same sign-in state and must not
             // wipe and reload the home feed.
@@ -328,7 +332,8 @@ public final class HomeViewModel {
         // Phase 2: one subs page when search is exhausted.
         // Loading one page per call lets user-triggered scrolls append more pages lazily.
         if let idx = sections.firstIndex(where: { $0.section.type == .subscriptions }),
-           let token = sections[idx].nextPageToken {
+           let token = sections[idx].nextPageToken
+        {
             homeLog.notice("loadNextShortsPage subs: fetching token=\(String(token.prefix(16)))\u{2026}")
             do {
                 let more = try await Self.fetchMoreInternalVideos(type: .subscriptions, token: token, api: api)
@@ -336,7 +341,7 @@ public final class HomeViewModel {
                 let newInternalVideos = more.0.filter { !existingIDs.contains($0.id) }
                 sections[idx].videos.append(contentsOf: newInternalVideos)
                 sections[idx].nextPageToken = more.1
-                let newShorts = newInternalVideos.filter { $0.isShort }.count
+                let newShorts = newInternalVideos.count(where: { $0.isShort })
                 homeLog.notice("loadNextShortsPage subs: added \(newInternalVideos.count) (\(newShorts) shorts) hasMore=\(more.1 != nil)")
             } catch {
                 homeLog.error("loadNextShortsPage subs: failed: \(error.localizedDescription)")
@@ -411,7 +416,7 @@ public final class HomeViewModel {
             switch type {
             case .subscriptions:
                 let group = try await api.fetchSubscriptions()
-                let shortsCount = group.videos.filter { $0.isShort }.count
+                let shortsCount = group.videos.count(where: { $0.isShort })
                 homeLog.notice("fetchInternalVideos subs: total=\(group.videos.count) shorts=\(shortsCount) regular=\(group.videos.count - shortsCount)")
                 return (Array(group.videos.prefix(InnerTubeClients.maxInternalVideoResults)), group.nextPageToken)
             case .home:
@@ -419,7 +424,7 @@ public final class HomeViewModel {
                 let token = rows.last(where: { $0.nextPageToken != nil })?.nextPageToken
                 var seen = Set<String>()
                 let deduped = rows.flatMap(\.videos).filter { seen.insert($0.id).inserted }
-                let fetchedShortsCount = deduped.filter { $0.isShort }.count
+                let fetchedShortsCount = deduped.count(where: { $0.isShort })
                 homeLog.notice("fetchInternalVideos home: total=\(deduped.count) shorts=\(fetchedShortsCount) regular=\(deduped.count - fetchedShortsCount)")
                 if deduped.isEmpty {
                     // Home feed empty (no watch history / feedNudgeRenderer) — fall back to popular
@@ -443,7 +448,7 @@ public final class HomeViewModel {
                 let group = try await retryWithBackoff(label: "HomeVM.subs") {
                     try await api.fetchSubscriptions(continuationToken: token)
                 }
-                let shortsCount = group.videos.filter { $0.isShort }.count
+                let shortsCount = group.videos.count(where: { $0.isShort })
                 homeLog.notice("fetchMoreInternalVideos subs: total=\(group.videos.count) shorts=\(shortsCount) regular=\(group.videos.count - shortsCount)")
                 return (group.videos, group.nextPageToken)
             case .home:

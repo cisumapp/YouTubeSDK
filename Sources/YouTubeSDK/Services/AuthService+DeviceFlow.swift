@@ -1,8 +1,6 @@
 import Foundation
 
-
 extension InternalAuthService {
-
     // MARK: - Device Code request
 
     struct DeviceCodeResponse {
@@ -18,28 +16,28 @@ extension InternalAuthService {
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         req.httpBody = formEncode([
-            "client_id":     creds.clientId,
+            "client_id": creds.clientId,
             "client_secret": creds.clientSecret,
-            "scope":         scope,
+            "scope": scope,
         ])
 
         let (data, response) = try await URLSession.shared.data(for: req)
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+        guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
             throw AuthError.deviceCodeRequestFailed
         }
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let deviceCode = json["device_code"]       as? String,
-              let userCode   = json["user_code"]         as? String,
-              let verURL     = json["verification_url"]  as? String,
-              let expiresIn  = json["expires_in"]        as? Int
+              let deviceCode = json["device_code"] as? String,
+              let userCode = json["user_code"] as? String,
+              let verURL = json["verification_url"] as? String,
+              let expiresIn = json["expires_in"] as? Int
         else { throw AuthError.deviceCodeRequestFailed }
 
         return DeviceCodeResponse(
-            deviceCode:      deviceCode,
-            userCode:        userCode,
+            deviceCode: deviceCode,
+            userCode: userCode,
             verificationURL: verURL,
-            expiresIn:       expiresIn,
-            interval:        json["interval"] as? Int ?? 5
+            expiresIn: expiresIn,
+            interval: json["interval"] as? Int ?? 5
         )
     }
 
@@ -65,7 +63,7 @@ extension InternalAuthService {
                 try await exchangeDeviceCode(deviceCode: deviceCode, creds: creds)
                 authLog.notice("✅ Token exchanged — fetching user info")
                 try await fetchUserInfo()
-                authLog.notice("✅ Signed in as \(self.accountName ?? "unknown")")
+                authLog.notice("✅ Signed in as \(accountName ?? "unknown")")
                 // Fetch YouTube.com SAPISID cookie for WEB_CREATOR SAPISIDHASH auth.
                 // Best-effort: runs in background, failure doesn't block sign-in.
                 Task { await self.fetchYouTubeWebCookies() }
@@ -99,10 +97,10 @@ extension InternalAuthService {
         req.httpMethod = "POST"
         req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         req.httpBody = formEncode([
-            "code":          deviceCode,
-            "client_id":     creds.clientId,
+            "code": deviceCode,
+            "client_id": creds.clientId,
             "client_secret": creds.clientSecret,
-            "grant_type":    "http://oauth.net/grant_type/device/1.0",
+            "grant_type": "http://oauth.net/grant_type/device/1.0",
         ])
 
         let (data, response) = try await URLSession.shared.data(for: req)
@@ -116,14 +114,14 @@ extension InternalAuthService {
         if let oauthError = json["error"] as? String {
             switch oauthError {
             case "authorization_pending": throw AuthError.authorizationPending
-            case "slow_down":             throw AuthError.slowDown
-            case "access_denied":         throw AuthError.cancelled
-            case "expired_token":         throw AuthError.deviceCodeExpired
-            default:                      throw AuthError.tokenExchangeFailed
+            case "slow_down": throw AuthError.slowDown
+            case "access_denied": throw AuthError.cancelled
+            case "expired_token": throw AuthError.deviceCodeExpired
+            default: throw AuthError.tokenExchangeFailed
             }
         }
 
-        guard (200..<300).contains(statusCode) else { throw AuthError.tokenExchangeFailed }
+        guard (200 ..< 300).contains(statusCode) else { throw AuthError.tokenExchangeFailed }
 
         accessToken = json["access_token"] as? String
         if let r = json["refresh_token"] as? String { refreshToken = r }

@@ -1,13 +1,13 @@
 import Foundation
 
 // MARK: - RSSFeedStore
+
 //
 // Persists user-added RSS feed subscriptions on-device in UserDefaults as JSON.
 // Follows the same actor pattern as LocalSubscriptionStore.
 // Thread-safe: implemented as a Swift actor.
 
 public actor RSSFeedStore {
-
     // MARK: - Singleton
 
     public static let shared = RSSFeedStore()
@@ -26,8 +26,9 @@ public actor RSSFeedStore {
     private init() {
         self.defaults = .standard
         if let data = UserDefaults.standard.data(forKey: Self.udKey),
-           let decoded = try? JSONDecoder().decode([String: RSSFeedInfo].self, from: data) {
-            feeds = Dictionary(uniqueKeysWithValues: decoded.compactMap { k, v in
+           let decoded = try? JSONDecoder().decode([String: RSSFeedInfo].self, from: data)
+        {
+            self.feeds = Dictionary(uniqueKeysWithValues: decoded.compactMap { k, v in
                 UUID(uuidString: k).map { ($0, v) }
             })
         }
@@ -39,8 +40,9 @@ public actor RSSFeedStore {
         let ud = UserDefaults(suiteName: suiteName) ?? .standard
         self.defaults = ud
         if let data = ud.data(forKey: Self.udKey),
-           let decoded = try? JSONDecoder().decode([String: RSSFeedInfo].self, from: data) {
-            feeds = Dictionary(uniqueKeysWithValues: decoded.compactMap { k, v in
+           let decoded = try? JSONDecoder().decode([String: RSSFeedInfo].self, from: data)
+        {
+            self.feeds = Dictionary(uniqueKeysWithValues: decoded.compactMap { k, v in
                 UUID(uuidString: k).map { ($0, v) }
             })
         }

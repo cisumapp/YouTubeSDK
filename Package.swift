@@ -7,13 +7,16 @@ let package = Package(
     name: "YouTubeSDK",
     platforms: [
         .iOS(.v17),
-        .macOS(.v14)
+        .macOS(.v14),
     ],
     products: [
-        .library(name: "YouTubeSDK", targets: ["YouTubeSDK"])
+        .library(name: "YouTubeSDK", targets: ["YouTubeSDK"]),
     ],
     targets: [
-        .target(name: "YouTubeSDK"),
-        .testTarget(name: "YouTubeSDKTests", dependencies: ["YouTubeSDK"])
+        .target(
+            name: "YouTubeSDK",
+            resources: [.process("Resources")]
+        ),
+        .testTarget(name: "YouTubeSDKTests", dependencies: ["YouTubeSDK"]),
     ]
 )

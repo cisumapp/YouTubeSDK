@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - CurrentQueueStore
+
 //
 // Ordered list of videos the user has queued to play one after another.
 // Surfaced in the Library as a synthetic "Current Queue" playlist.
@@ -9,7 +10,6 @@ import Foundation
 // LocalSubscriptionStore.
 
 public actor CurrentQueueStore: UserDefaultsBackedStore {
-
     // MARK: - Singleton
 
     public static let shared = CurrentQueueStore()
@@ -32,7 +32,7 @@ public actor CurrentQueueStore: UserDefaultsBackedStore {
 
     private init() {
         self.defaults = .standard
-        if let loaded = Self.loadFrom(.standard) { videos = loaded }
+        if let loaded = Self.loadFrom(.standard) { self.videos = loaded }
     }
 
     /// Designated initializer for unit tests.
@@ -40,7 +40,7 @@ public actor CurrentQueueStore: UserDefaultsBackedStore {
     /// UserDefaults state — mirrors InternalVideoStateStore(suiteName:).
     init(suiteName: String) {
         self.defaults = UserDefaults(suiteName: suiteName) ?? .standard
-        if let loaded = Self.loadFrom(self.defaults) { videos = loaded }
+        if let loaded = Self.loadFrom(defaults) { self.videos = loaded }
     }
 
     // MARK: - Public API
@@ -96,8 +96,8 @@ public actor CurrentQueueStore: UserDefaultsBackedStore {
     /// and the correct `playlistIndex`. This is what the player receives.
     public func videoAt(index: Int) -> InternalVideo? {
         guard videos.indices.contains(index) else { return nil }
-        var copy           = videos[index]
-        copy.playlistId    = Self.playlistID
+        var copy = videos[index]
+        copy.playlistId = Self.playlistID
         copy.playlistIndex = index
         return copy
     }
@@ -105,17 +105,22 @@ public actor CurrentQueueStore: UserDefaultsBackedStore {
     /// A `PlaylistInfo` stub for rendering the queue row in LibraryView.
     public var asPlaylistInfo: PlaylistInfo {
         PlaylistInfo(
-            id:           Self.playlistID,
-            title:        "Current Queue",
-            videoCount:   videos.count,
+            id: Self.playlistID,
+            title: "Current Queue",
+            videoCount: videos.count,
             thumbnailURL: videos.first?.thumbnailURL
         )
     }
 
     // MARK: - UserDefaultsBackedStore
 
-    func encodedValue() -> [InternalVideo] { videos }
-    func decodeValue(_ decoded: [InternalVideo]) { videos = decoded }
+    func encodedValue() -> [InternalVideo] {
+        videos
+    }
+
+    func decodeValue(_ decoded: [InternalVideo]) {
+        videos = decoded
+    }
 
     func afterPersist() {
         let value = videos

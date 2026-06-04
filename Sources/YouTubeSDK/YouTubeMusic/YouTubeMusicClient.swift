@@ -8,7 +8,6 @@
 import Foundation
 
 public actor YouTubeMusicClient {
-
     let network: NetworkClient
     let cookies: String?
     let accessToken: String?
@@ -28,13 +27,22 @@ public actor YouTubeMusicClient {
         let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedQuery.isEmpty else { return [] }
 
+        do {
+            let data = try await network.get("search", body: ["query": normalizedQuery])
+            let songs = parseMusicItems(from: data)
+            if !songs.isEmpty {
+                return songs
+            }
+        } catch {
+            YouTubeDebugLogger.log("YouTubeMusic search primary endpoint failed for query=\"\(normalizedQuery)\" - \(error.localizedDescription)")
+        }
+
         if let fallbackSongs = try? await searchViaYouTube(normalizedQuery), !fallbackSongs.isEmpty {
             YouTubeDebugLogger.log("YouTubeMusic search used generic YouTube fallback for query=\"\(normalizedQuery)\"")
             return fallbackSongs
         }
 
-        let data = try await network.get("search", body: ["query": normalizedQuery])
-        return parseMusicItems(from: data)
+        return []
     }
 
     private func searchViaYouTube(_ query: String) async throws -> [YouTubeMusicSong] {
@@ -42,37 +50,57 @@ public actor YouTubeMusicClient {
         let continuation = try await youtube.search(query)
 
         return continuation.items.compactMap { item in
-            if case .song(let song) = item {
+            switch item {
+            case let .song(song):
                 return song
+            case let .video(video):
+                guard !video.id.isEmpty else { return nil }
+                let duration: TimeInterval? = {
+                    guard !video.lengthInSeconds.isEmpty else { return nil }
+                    return TimeInterval(video.lengthInSeconds)
+                }()
+                return YouTubeMusicSong(
+                    id: video.id,
+                    title: video.title,
+                    artists: video.author.isEmpty ? [] : [video.author],
+                    album: nil,
+                    duration: duration,
+                    thumbnailURL: video.thumbnailURL.flatMap { URL(string: $0) },
+                    videoId: video.id,
+                    isExplicit: false
+                )
+            default:
+                return nil
             }
-            return nil
         }
     }
-    
+
     public func getSearchSuggestions(query: String) async throws -> [String] {
         let body = ["input": query]
         let data = try await network.get("music/get_search_suggestions", body: body)
-        
+
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return []
         }
-        
+
         let suggestions = findAll(key: "searchSuggestionRenderer", in: json)
         return suggestions.compactMap { item in
             guard let dict = item as? [String: Any] else { return nil }
-            
+
             // Try both parsing styles found in discovery
             if let nav = dict["navigationEndpoint"] as? [String: Any],
                let search = nav["searchEndpoint"] as? [String: Any],
-               let query = search["query"] as? String {
+               let query = search["query"] as? String
+            {
                 return query
             }
-            
+
             if let sugg = dict["suggestion"] as? [String: Any],
-               let runs = sugg["runs"] as? [[String: Any]] {
+               let runs = sugg["runs"] as? [[String: Any]]
+            {
                 return runs.compactMap { $0["text"] as? String }.joined()
             }
-            
+
             return nil
         }
     }

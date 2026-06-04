@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - LocalSubscriptionFeedService
+
 //
 // Builds a subscription feed from locally followed channels, with no authentication.
 // Mirrors FreeTube's SubscriptionsInternalVideos fetch strategy:
@@ -11,7 +12,6 @@ import Foundation
 // (LocalSubscriptionStore, LocalSubscriptionFeedCache) that are passed as parameters.
 
 public struct LocalSubscriptionFeedService: Sendable {
-
     // MARK: - Singleton
 
     public static let shared = LocalSubscriptionFeedService()
@@ -124,12 +124,16 @@ public struct LocalSubscriptionFeedService: Sendable {
     private static func fetchViaRSS(channel: LocalChannel, session: URLSession) async -> RSSParseResult? {
         // Fetch uploads and Shorts playlist feeds concurrently.
         // Shorts RSS is best-effort: if unavailable the enrichment step is skipped.
-        async let uploadsPrimary = fetchRSS(url: YouTubeRSS.feedURL(for: channel.id),
-                                            channelId: channel.id,
-                                            session: session)
-        async let shortsFetch    = fetchRSS(url: YouTubeRSS.shortsFeedURL(for: channel.id),
-                                            channelId: channel.id,
-                                            session: session)
+        async let uploadsPrimary = fetchRSS(
+            url: YouTubeRSS.feedURL(for: channel.id),
+            channelId: channel.id,
+            session: session
+        )
+        async let shortsFetch = fetchRSS(
+            url: YouTubeRSS.shortsFeedURL(for: channel.id),
+            channelId: channel.id,
+            session: session
+        )
 
         // Await both concurrent fetches before any serial work.
         let primaryResult = await uploadsPrimary
@@ -139,9 +143,11 @@ public struct LocalSubscriptionFeedService: Sendable {
         let uploads: RSSParseResult
         if let result = primaryResult {
             uploads = result
-        } else if let fallback = await fetchRSS(url: YouTubeRSS.fallbackFeedURL(for: channel.id),
-                                                channelId: channel.id,
-                                                session: session) {
+        } else if let fallback = await fetchRSS(
+            url: YouTubeRSS.fallbackFeedURL(for: channel.id),
+            channelId: channel.id,
+            session: session
+        ) {
             uploads = fallback
         } else {
             return nil
@@ -163,7 +169,7 @@ public struct LocalSubscriptionFeedService: Sendable {
         do {
             let (data, response) = try await session.data(from: url)
             guard let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode) else { return nil }
+                  (200 ..< 300).contains(http.statusCode) else { return nil }
             let result = parseYouTubeRSS(data, channelId: channelId)
             return result.videos.isEmpty ? nil : result
         } catch {

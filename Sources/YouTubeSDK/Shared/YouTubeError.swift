@@ -17,18 +17,18 @@ public enum YouTubeError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .networkError(let error):
-            return "Network Error: \(error.localizedDescription)"
-        case .apiError(let message):
-            return "API Error: \(message)"
-        case .parsingError(let details):
-            return "Parsing Error: \(details)"
-        case .decipheringFailed(let videoId):
-            return "Deciphering Failed for video ID: \(videoId)"
+        case let .networkError(error):
+            "Network Error: \(error.localizedDescription)"
+        case let .apiError(message):
+            "API Error: \(message)"
+        case let .parsingError(details):
+            "Parsing Error: \(details)"
+        case let .decipheringFailed(videoId):
+            "Deciphering Failed for video ID: \(videoId)"
         case .authenticationRequired:
-            return "Authentication Required: Please sign in to perform this action."
+            "Authentication Required: Please sign in to perform this action."
         case .unknown:
-            return "An unknown error occurred."
+            "An unknown error occurred."
         }
     }
 }

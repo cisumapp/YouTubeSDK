@@ -6,6 +6,7 @@ import SwiftUI
 /// Persisted app-wide preferences (mirrors Android `PlayerData`, `MainUIData`, `GeneralData`, etc.).
 public struct AppSettings: Codable {
     // MARK: Player
+
     public var preferredQuality: InternalVideoQuality
     public var playbackSpeed: Double
     public var autoplayEnabled: Bool
@@ -30,9 +31,10 @@ public struct AppSettings: Codable {
 
     /// Whether the video should fill the screen (cropping sides) or fit within bounds.
     public enum InternalVideoGravityMode: String, Codable, CaseIterable, Sendable {
-        case fit  = "fit"   // resizeAspect — letterbox/pillarbox
-        case fill = "fill"  // resizeAspectFill — crops to fill
+        case fit // resizeAspect — letterbox/pillarbox
+        case fill // resizeAspectFill — crops to fill
     }
+
     public var videoGravityMode: InternalVideoGravityMode
 
     /// When `true`, the current video replays from the start instead of advancing.
@@ -41,6 +43,7 @@ public struct AppSettings: Codable {
     public var shuffleEnabled: Bool
 
     // MARK: UI
+
     public var defaultSection: String
     public var compactThumbnails: Bool
     public var hideShorts: Bool
@@ -59,10 +62,11 @@ public struct AppSettings: Codable {
     /// Mirrors Android's `GeneralData.historyEnabled`.
     public enum HistoryState: String, Codable, CaseIterable, Sendable {
         /// Default — history is fetched from YouTube and local positions are saved.
-        case enabled  = "enabled"
+        case enabled
         /// History section shows nothing and local watch positions are not saved.
-        case disabled = "disabled"
+        case disabled
     }
+
     public var historyState: HistoryState
 
     // MARK: SponsorBlock
@@ -71,11 +75,11 @@ public struct AppSettings: Codable {
     /// Mirrors Android's per-category action setting in `SponsorBlockData`.
     public enum SponsorBlockAction: String, Codable, CaseIterable, Sendable {
         /// Automatically skip the segment without user interaction.
-        case skip      = "skip"
+        case skip
         /// Show a dismissible toast and let the user manually skip.
-        case showToast = "showToast"
+        case showToast
         /// Take no action — segment plays through normally.
-        case nothing   = "nothing"
+        case nothing
     }
 
     public var sponsorBlockEnabled: Bool
@@ -100,6 +104,7 @@ public struct AppSettings: Codable {
     }
 
     // MARK: Audio
+
     /// BCP 47 language code of the user's preferred audio track (e.g. "es", "fr", "pt-BR").
     /// `nil` means use the HLS default. Set implicitly when the user picks a track in the player.
     public var preferredAudioLanguage: String?
@@ -110,9 +115,11 @@ public struct AppSettings: Codable {
     public var preferredCaptionLanguage: String?
 
     // MARK: DeArrow
+
     public var deArrowEnabled: Bool
 
     // MARK: Network
+
     /// Placeholder for future IPv4-forcing transport. Currently inert — no network behaviour
     /// is changed when this is `true`. The transport implementation will be added once the
     /// approach is validated on device (see docs/vpn-fix.md §Step 4).
@@ -125,11 +132,13 @@ public struct AppSettings: Codable {
     public var poTokenServiceURL: URL?
 
     // MARK: Audio-only mode
+
     /// When `true`, videos load only the audio stream and display the thumbnail.
     /// ~90% data reduction vs 1080p. Live streams are excluded automatically.
     public var audioOnlyMode: Bool
 
     // MARK: iCloud sync
+
     /// When `true`, local user data (subscriptions, RSS feeds, video state, queue) is
     /// synced to iCloud via `NSUbiquitousKeyValueStore`. Defaults to `false` (opt-in).
     public var iCloudSyncEnabled: Bool
@@ -143,29 +152,29 @@ public struct AppSettings: Codable {
     public static let availableSeekOptions: [Int] = [5, 10, 15, 20, 30, 45, 60]
 
     public enum InternalVideoQuality: String, Codable, CaseIterable, Sendable {
-        case auto  = "auto"
+        case auto
         case q2160 = "2160p"
         case q1440 = "1440p"
         case q1080 = "1080p"
-        case q720  = "720p"
-        case q480  = "480p"
-        case q360  = "360p"
-        case q240  = "240p"
-        case q144  = "144p"
+        case q720 = "720p"
+        case q480 = "480p"
+        case q360 = "360p"
+        case q240 = "240p"
+        case q144 = "144p"
 
         /// The maximum pixel height corresponding to this quality level.
         /// Returns `nil` for `.auto` (no cap).
         public var maxHeight: Int? {
             switch self {
-            case .auto:  return nil
-            case .q144:  return 144
-            case .q240:  return 240
-            case .q360:  return 360
-            case .q480:  return 480
-            case .q720:  return 720
-            case .q1080: return 1080
-            case .q1440: return 1440
-            case .q2160: return 2160
+            case .auto: nil
+            case .q144: 144
+            case .q240: 240
+            case .q360: 360
+            case .q480: 480
+            case .q720: 720
+            case .q1080: 1080
+            case .q1440: 1440
+            case .q2160: 2160
             }
         }
 
@@ -177,14 +186,14 @@ public struct AppSettings: Codable {
 
     public enum ThemeName: String, Codable, CaseIterable {
         case system = "System"
-        case dark   = "Dark"
-        case light  = "Light"
+        case dark = "Dark"
+        case light = "Light"
 
         public var colorScheme: ColorScheme? {
             switch self {
-            case .system: return nil
-            case .dark:   return .dark
-            case .light:  return .light
+            case .system: nil
+            case .dark: .dark
+            case .light: .light
             }
         }
     }
@@ -192,50 +201,50 @@ public struct AppSettings: Codable {
     // MARK: Defaults
 
     public init() {
-        preferredQuality     = .auto
-        playbackSpeed        = 1.0
-        autoplayEnabled      = true
-        subtitlesEnabled     = false
-        subtitlesLanguage    = nil
-        backgroundPlaybackEnabled = false
-        landscapeAlwaysPlay  = false
-        pipEnabled           = true
-        miniPlayerEnabled    = true
-        seekBackSeconds      = 10
-        seekForwardSeconds   = 30
-        controlsHideTimeout  = 4
-        videoGravityMode     = .fit
-        loopEnabled          = false
-        shuffleEnabled       = false
-        defaultSection       = BrowseSection.SectionType.home.rawValue
-        compactThumbnails    = false
-        hideShorts           = false
-        perDeviceRecommendationsEnabled = true
-        themeName            = .system
-        enabledSections      = BrowseSection.defaultSections.map(\.type)
-        historyState         = .enabled
-        sponsorBlockEnabled  = true
+        self.preferredQuality = .auto
+        self.playbackSpeed = 1.0
+        self.autoplayEnabled = true
+        self.subtitlesEnabled = false
+        self.subtitlesLanguage = nil
+        self.backgroundPlaybackEnabled = false
+        self.landscapeAlwaysPlay = false
+        self.pipEnabled = true
+        self.miniPlayerEnabled = true
+        self.seekBackSeconds = 10
+        self.seekForwardSeconds = 30
+        self.controlsHideTimeout = 4
+        self.videoGravityMode = .fit
+        self.loopEnabled = false
+        self.shuffleEnabled = false
+        self.defaultSection = BrowseSection.SectionType.home.rawValue
+        self.compactThumbnails = false
+        self.hideShorts = false
+        self.perDeviceRecommendationsEnabled = true
+        self.themeName = .system
+        self.enabledSections = BrowseSection.defaultSections.map(\.type)
+        self.historyState = .enabled
+        self.sponsorBlockEnabled = true
         // Default actions mirror Android's SponsorBlockData defaults:
         //   sponsor / selfPromo → auto-skip; interaction / intro / preview / musicOfftopic → show toast; others → nothing
-        sponsorBlockActions = [
-            .sponsor:       .skip,
-            .selfPromo:     .skip,
-            .interaction:   .showToast,
-            .intro:         .showToast,
-            .outro:         .nothing,
-            .preview:       .showToast,
-            .filler:        .nothing,
+        self.sponsorBlockActions = [
+            .sponsor: .skip,
+            .selfPromo: .skip,
+            .interaction: .showToast,
+            .intro: .showToast,
+            .outro: .nothing,
+            .preview: .showToast,
+            .filler: .nothing,
             .musicOfftopic: .showToast,
-            .poiHighlight:  .nothing,
+            .poiHighlight: .nothing,
         ]
-        sponsorBlockMinSegmentDuration = 0
-        sponsorBlockExcludedChannels   = [:]
-        preferredAudioLanguage = nil
-        preferredCaptionLanguage = nil
-        deArrowEnabled       = false
-        forceIPv4            = false
-        poTokenServiceURL    = nil
-        audioOnlyMode        = false
-        iCloudSyncEnabled    = false
+        self.sponsorBlockMinSegmentDuration = 0
+        self.sponsorBlockExcludedChannels = [:]
+        self.preferredAudioLanguage = nil
+        self.preferredCaptionLanguage = nil
+        self.deArrowEnabled = false
+        self.forceIPv4 = false
+        self.poTokenServiceURL = nil
+        self.audioOnlyMode = false
+        self.iCloudSyncEnabled = false
     }
 }

@@ -39,7 +39,6 @@ public func parseYouTubeRSS(_ data: Data, channelId: String) -> RSSParseResult {
 // MARK: - RSSParserDelegate
 
 private final class RSSParserDelegate: NSObject, XMLParserDelegate, @unchecked Sendable {
-
     let channelId: String
     private(set) var channelName: String?
     private(set) var videos: [InternalVideo] = []
@@ -56,9 +55,9 @@ private final class RSSParserDelegate: NSObject, XMLParserDelegate, @unchecked S
     private var currentThumbnailURL: URL?
     private var currentAuthor: String?
 
-    // ISO 8601 formatter — YouTube uses "2024-01-15T18:00:00+00:00" format.
-    // Instantiated per-parser-run (not a static) to avoid shared mutable state
-    // across concurrent parses under Swift 6 strict concurrency.
+    /// ISO 8601 formatter — YouTube uses "2024-01-15T18:00:00+00:00" format.
+    /// Instantiated per-parser-run (not a static) to avoid shared mutable state
+    /// across concurrent parses under Swift 6 strict concurrency.
     private let isoFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime]
@@ -72,10 +71,10 @@ private final class RSSParserDelegate: NSObject, XMLParserDelegate, @unchecked S
     // MARK: - XMLParserDelegate
 
     func parser(
-        _ parser: XMLParser,
+        _: XMLParser,
         didStartElement elementName: String,
-        namespaceURI: String?,
-        qualifiedName: String?,
+        namespaceURI _: String?,
+        qualifiedName _: String?,
         attributes: [String: String] = [:]
     ) {
         currentText = ""
@@ -108,15 +107,15 @@ private final class RSSParserDelegate: NSObject, XMLParserDelegate, @unchecked S
         }
     }
 
-    func parser(_ parser: XMLParser, foundCharacters string: String) {
+    func parser(_: XMLParser, foundCharacters string: String) {
         currentText += string
     }
 
     func parser(
-        _ parser: XMLParser,
+        _: XMLParser,
         didEndElement elementName: String,
-        namespaceURI: String?,
-        qualifiedName: String?
+        namespaceURI _: String?,
+        qualifiedName _: String?
     ) {
         let trimmed = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
 

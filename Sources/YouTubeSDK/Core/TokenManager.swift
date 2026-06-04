@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - TokenManager
+
 //
 // Actor that owns all Keychain storage for OAuth tokens.
 //
@@ -9,7 +10,6 @@ import Foundation
 // Consumers that want to react to future token changes subscribe to `updates`.
 
 public actor TokenManager {
-
     // MARK: - Types
 
     public enum Update: Sendable {
@@ -55,40 +55,57 @@ public actor TokenManager {
     public init() {
         var cont: AsyncStream<Update>.Continuation!
         let stream = AsyncStream<Update> { cont = $0 }
-        updates = stream
-        continuation = cont
+        self.updates = stream
+        self.continuation = cont
 
         let storage = YouTubeSDKConfig.storage
         let snap = Snapshot(
-            accessToken:     storage?.load(key: "st_access_token"),
-            refreshToken:    storage?.load(key: "st_refresh_token"),
+            accessToken: storage?.load(key: "st_access_token"),
+            refreshToken: storage?.load(key: "st_refresh_token"),
             tokenExpiry: {
                 guard let s = storage?.load(key: "st_token_expiry")
                 else { return nil }
                 return ISO8601DateFormatter().date(from: s)
             }(),
-            accountName:     storage?.load(key: "st_account_name"),
+            accountName: storage?.load(key: "st_account_name"),
             accountAvatarURL: storage?.load(key: "st_avatar_url")
-                                .flatMap(URL.init(string:)),
-            sapisid:         storage?.load(key: "st_sapisid")
+                .flatMap(URL.init(string:)),
+            sapisid: storage?.load(key: "st_sapisid")
         )
-        initialSnapshot  = snap
-        accessToken      = snap.accessToken
-        refreshToken     = snap.refreshToken
-        tokenExpiry      = snap.tokenExpiry
-        accountName      = snap.accountName
-        accountAvatarURL = snap.accountAvatarURL
-        sapisid          = snap.sapisid
+        self.initialSnapshot = snap
+        self.accessToken = snap.accessToken
+        self.refreshToken = snap.refreshToken
+        self.tokenExpiry = snap.tokenExpiry
+        self.accountName = snap.accountName
+        self.accountAvatarURL = snap.accountAvatarURL
+        self.sapisid = snap.sapisid
     }
 
     // MARK: - Reads
 
-    public func currentAccessToken() -> String?  { accessToken }
-    public func currentRefreshToken() -> String? { refreshToken }
-    public func currentTokenExpiry() -> Date?    { tokenExpiry }
-    public func currentAccountName() -> String?  { accountName }
-    public func currentAvatarURL() -> URL?       { accountAvatarURL }
-    public func isSignedIn() -> Bool             { accessToken != nil }
+    public func currentAccessToken() -> String? {
+        accessToken
+    }
+
+    public func currentRefreshToken() -> String? {
+        refreshToken
+    }
+
+    public func currentTokenExpiry() -> Date? {
+        tokenExpiry
+    }
+
+    public func currentAccountName() -> String? {
+        accountName
+    }
+
+    public func currentAvatarURL() -> URL? {
+        accountAvatarURL
+    }
+
+    public func isSignedIn() -> Bool {
+        accessToken != nil
+    }
 
     // MARK: - Mutations
 
@@ -99,11 +116,11 @@ public actor TokenManager {
         accountName: String?,
         avatarURL: URL?
     ) {
-        self.accessToken      = access
-        self.refreshToken     = refresh
-        self.tokenExpiry      = expiry
-        self.accountName      = accountName
-        self.accountAvatarURL = avatarURL
+        accessToken = access
+        refreshToken = refresh
+        tokenExpiry = expiry
+        self.accountName = accountName
+        accountAvatarURL = avatarURL
         persistToStorage()
         continuation?.yield(.refreshed(token: access, expiresAt: expiry))
     }
@@ -119,12 +136,12 @@ public actor TokenManager {
     }
 
     public func clearToken() {
-        accessToken      = nil
-        refreshToken     = nil
-        tokenExpiry      = nil
-        accountName      = nil
+        accessToken = nil
+        refreshToken = nil
+        tokenExpiry = nil
+        accountName = nil
         accountAvatarURL = nil
-        sapisid          = nil
+        sapisid = nil
         deleteFromStorage()
         continuation?.yield(.signedOut)
     }
@@ -134,7 +151,7 @@ public actor TokenManager {
     private func persistToStorage() {
         guard let storage = YouTubeSDKConfig.storage else { return }
         let fmt = ISO8601DateFormatter()
-        
+
         if let accessToken { storage.save(accessToken, key: "st_access_token") } else { storage.delete(key: "st_access_token") }
         if let refreshToken { storage.save(refreshToken, key: "st_refresh_token") } else { storage.delete(key: "st_refresh_token") }
         if let tokenExpiry { storage.save(fmt.string(from: tokenExpiry), key: "st_token_expiry") } else { storage.delete(key: "st_token_expiry") }
@@ -145,7 +162,8 @@ public actor TokenManager {
     private func deleteFromStorage() {
         guard let storage = YouTubeSDKConfig.storage else { return }
         for key in ["st_access_token", "st_refresh_token", "st_token_expiry",
-                    "st_account_name", "st_avatar_url", "st_sapisid"] {
+                    "st_account_name", "st_avatar_url", "st_sapisid"]
+        {
             storage.delete(key: key)
         }
     }

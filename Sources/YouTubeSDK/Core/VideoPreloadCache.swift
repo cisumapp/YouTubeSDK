@@ -5,6 +5,7 @@ import os
 private let cacheLog = Logger(subsystem: appSubsystem, category: "PreloadCache")
 
 // MARK: - InternalVideoPreloadCache
+
 //
 // An in-memory, actor-isolated cache for all per-video API responses that
 // PlaybackViewModel needs before playback can start.
@@ -28,17 +29,19 @@ private let cacheLog = Logger(subsystem: appSubsystem, category: "PreloadCache")
 /// Priority tiers for the prefetch queue.
 /// Higher raw values are dispatched first.
 public enum PrefetchPriority: Int, Comparable, CaseIterable, Sendable {
-    case speculative = 0   // neighbour prefetch — likely next video
-    case visible     = 1   // InternalVideoCardView onAppear
-    case immediate   = 2   // reserved for near-play scenarios
-    case userFocused = 3   // reserved for user-initiated loads
+    case speculative = 0 // neighbour prefetch — likely next video
+    case visible = 1 // InternalVideoCardView onAppear
+    case immediate = 2 // reserved for near-play scenarios
+    case userFocused = 3 // reserved for user-initiated loads
 
-    public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
 }
 
 // MARK: - PrefetchRequest
 
-private struct PrefetchRequest: Sendable {
+private struct PrefetchRequest {
     let videoId: String
     let sponsorCategories: Set<SponsorSegment.Category>
     let authToken: String?
@@ -47,12 +50,12 @@ private struct PrefetchRequest: Sendable {
 }
 
 public actor InternalVideoPreloadCache {
-
     // MARK: - Singleton
 
     public static let shared = InternalVideoPreloadCache()
 
     // MARK: - Owned service instances
+
     //
     // The cache owns lightweight service instances so callers (e.g. InternalVideoCardView)
     // only need to supply `videoId`, `isAuthenticated`, and `sponsorCategories` —
@@ -60,22 +63,22 @@ public actor InternalVideoPreloadCache {
     // Auth token is kept in sync via `setAuthToken(_:)`.
     // Services are injected via init so tests can substitute pre-configured instances.
 
-    private let api:          InnerTubeAPI
+    private let api: InnerTubeAPI
     private let sponsorBlock: SponsorBlockService
-    private let deArrow:      DeArrowService
+    private let deArrow: DeArrowService
 
     // MARK: - TTL constants
 
     /// iOS-client CDN stream URLs expire after ~6 h; use 5 h 30 m to be safe.
-    public static let playerInfoTTL:     TimeInterval = 5.5 * 3600
+    public static let playerInfoTTL: TimeInterval = 5.5 * 3600
     /// Tracking URLs are account-bound; token lifetime is typically 1 h.
-    public static let trackingTTL:       TimeInterval = 3600
+    public static let trackingTTL: TimeInterval = 3600
     /// Related-video list can change; 20-min window covers typical session length.
-    public static let nextInfoTTL:       TimeInterval = 20 * 60
+    public static let nextInfoTTL: TimeInterval = 20 * 60
     /// End cards and SponsorBlock/DeArrow data are stable for hours.
-    public static let endCardsTTL:       TimeInterval = 4 * 3600
-    public static let sponsorTTL:        TimeInterval = 2 * 3600
-    public static let deArrowTTL:        TimeInterval = 4 * 3600
+    public static let endCardsTTL: TimeInterval = 4 * 3600
+    public static let sponsorTTL: TimeInterval = 2 * 3600
+    public static let deArrowTTL: TimeInterval = 4 * 3600
 
     // MARK: - LRU cap
 
@@ -84,25 +87,27 @@ public actor InternalVideoPreloadCache {
 
     // MARK: - Cache entry
 
-    struct CacheEntry<T: Sendable>: Sendable {
+    struct CacheEntry<T: Sendable> {
         let value: T
         let storedAt: Date
         let ttl: TimeInterval
-        var isExpired: Bool { Date().timeIntervalSince(storedAt) > ttl }
+        var isExpired: Bool {
+            Date().timeIntervalSince(storedAt) > ttl
+        }
     }
 
     // MARK: - Sub-caches (keyed by videoId)
 
-    private var playerInfoCache:  [String: CacheEntry<PlayerInfo>]               = [:]
-    private var trackingCache:    [String: CacheEntry<PlaybackTrackingURLs?>]    = [:]
-    private var nextInfoCache:    [String: CacheEntry<NextInfo>]                 = [:]
-    private var endCardsCache:    [String: CacheEntry<[EndCard]>]                = [:]
-    private var sponsorCache:     [String: CacheEntry<[SponsorSegment]>]         = [:]
-    private var deArrowCache:     [String: CacheEntry<DeArrowService.BrandingInfo>] = [:]
+    private var playerInfoCache: [String: CacheEntry<PlayerInfo>] = [:]
+    private var trackingCache: [String: CacheEntry<PlaybackTrackingURLs?>] = [:]
+    private var nextInfoCache: [String: CacheEntry<NextInfo>] = [:]
+    private var endCardsCache: [String: CacheEntry<[EndCard]>] = [:]
+    private var sponsorCache: [String: CacheEntry<[SponsorSegment]>] = [:]
+    private var deArrowCache: [String: CacheEntry<DeArrowService.BrandingInfo>] = [:]
     /// WKWebView-extracted HLS master manifest URLs keyed by videoId.
     /// NOT cleared by consume() — persists so that re-plays and neighbour navigation
     /// skip the 5–9 s WKWebView extraction step when the URL is still fresh.
-    private var wkHLSCache:       [String: CacheEntry<URL>]                     = [:]
+    private var wkHLSCache: [String: CacheEntry<URL>] = [:]
 
     // MARK: - Access order (LRU)
 
@@ -114,6 +119,7 @@ public actor InternalVideoPreloadCache {
     private var prefetchTasks: [String: Task<Void, Never>] = [:]
 
     // MARK: - In-flight coalescing
+
     //
     // Ensures concurrent live-load and prefetch calls for the same video ID
     // share a single network request rather than duplicating it.
@@ -121,15 +127,16 @@ public actor InternalVideoPreloadCache {
     private var inFlightPlayerFetches: [String: Task<PlayerInfo?, Never>] = [:]
 
     // MARK: - Priority queue + worker pool
+
     //
     // Replaces the old activePrefetchCount + silent-drop guard (FM-1).
     // Enqueues requests sorted by priority; drains the queue with a worker pool.
     // Phase K (task #30) will make the cap network-aware.
 
     private var prefetchQueue: [PrefetchRequest] = []
-    internal static let maxQueueDepth      = 20   // internal for tests + Phase K
-    internal static let maxWorkersWiFi     = 5    // internal for Phase K override
-    internal static let maxWorkersCellular = 2    // internal for Phase K override
+    static let maxQueueDepth = 20 // internal for tests + Phase K
+    static let maxWorkersWiFi = 5 // internal for Phase K override
+    static let maxWorkersCellular = 2 // internal for Phase K override
     private var activeWorkerCount = 0
 
     // MARK: - Disk cache (Phase J)
@@ -138,17 +145,17 @@ public actor InternalVideoPreloadCache {
 
     // MARK: - Network-aware throttling (Phase K)
 
-    nonisolated private let pathMonitor = NWPathMonitor()
-    private var currentPath: NWPath? = nil
+    private nonisolated let pathMonitor = NWPathMonitor()
+    private var currentPath: NWPath?
 
     private init(
         api: InnerTubeAPI = InnerTubeAPI(),
         sponsorBlock: SponsorBlockService = SponsorBlockService(),
         deArrow: DeArrowService = DeArrowService()
     ) {
-        self.api          = api
+        self.api = api
         self.sponsorBlock = sponsorBlock
-        self.deArrow      = deArrow
+        self.deArrow = deArrow
         pathMonitor.pathUpdateHandler = { [weak self] path in
             Task { await self?.updatePath(path) }
         }
@@ -241,7 +248,7 @@ public actor InternalVideoPreloadCache {
 
     /// Maximum concurrent prefetch workers for the current network path.
     /// Returns 0 when offline — new prefetches are paused but in-flight tasks continue.
-    var networkCap: Int {   // internal for tests
+    var networkCap: Int { // internal for tests
         guard let path = currentPath, path.status == .satisfied else {
             // No path yet or path unsatisfied — allow WiFi workers until first update.
             return currentPath == nil ? Self.maxWorkersWiFi : 0
@@ -254,7 +261,7 @@ public actor InternalVideoPreloadCache {
 
     /// Data types allowed for prefetch on the current network path.
     /// Cellular/expensive paths skip large cosmetic fetches (endCards, deArrow).
-    var allowedPrefetchDataTypes: Set<String> {   // internal for tests
+    var allowedPrefetchDataTypes: Set<String> { // internal for tests
         guard let path = currentPath, path.status == .satisfied else {
             return currentPath == nil ? ["playerInfo", "nextInfo", "sponsorSegments", "endCards", "deArrowBranding"] : []
         }
@@ -268,7 +275,7 @@ public actor InternalVideoPreloadCache {
     /// Called by `prefetch()` and by each worker on completion.
     func drainQueue(workerCap: Int? = nil) {
         let cap = workerCap ?? networkCap
-        guard cap > 0 else { return }  // paused when offline
+        guard cap > 0 else { return } // paused when offline
         while activeWorkerCount < cap, !prefetchQueue.isEmpty {
             let request = prefetchQueue.removeFirst()
             guard prefetchTasks[request.videoId] == nil else { continue }
@@ -325,30 +332,34 @@ public actor InternalVideoPreloadCache {
         // Disk-loaded entries use storedAt: .distantPast so SWR treats them as stale
         // and schedules background revalidation via Phase 2.
         if nextInfoCache[videoId] == nil,
-           let fromDisk = disk.load(NextInfo.self, videoId: videoId, dataType: "nextInfo") {
+           let fromDisk = disk.load(NextInfo.self, videoId: videoId, dataType: "nextInfo")
+        {
             nextInfoCache[videoId] = CacheEntry(value: fromDisk, storedAt: .distantPast, ttl: Self.nextInfoTTL)
         }
         if endCardsCache[videoId] == nil,
-           let fromDisk = disk.load([EndCard].self, videoId: videoId, dataType: "endCards") {
+           let fromDisk = disk.load([EndCard].self, videoId: videoId, dataType: "endCards")
+        {
             endCardsCache[videoId] = CacheEntry(value: fromDisk, storedAt: .distantPast, ttl: Self.endCardsTTL)
         }
         if sponsorCache[videoId] == nil,
-           let fromDisk = disk.load([SponsorSegment].self, videoId: videoId, dataType: "sponsorSegments") {
+           let fromDisk = disk.load([SponsorSegment].self, videoId: videoId, dataType: "sponsorSegments")
+        {
             sponsorCache[videoId] = CacheEntry(value: fromDisk, storedAt: .distantPast, ttl: Self.sponsorTTL)
         }
         if deArrowCache[videoId] == nil,
-           let fromDisk = disk.load(DeArrowService.BrandingInfo.self, videoId: videoId, dataType: "deArrowBranding") {
+           let fromDisk = disk.load(DeArrowService.BrandingInfo.self, videoId: videoId, dataType: "deArrowBranding")
+        {
             deArrowCache[videoId] = CacheEntry(value: fromDisk, storedAt: .distantPast, ttl: Self.deArrowTTL)
         }
         var staleFields = Set<CachedInternalVideoData.DataType>()
         let data = CachedInternalVideoData(
-            playerInfo:      fresh(playerInfoCache[videoId]),
-            trackingURLs:    trackingCache[videoId].flatMap { $0.isExpired ? nil : $0.value },
-            nextInfo:        staleOrFresh(nextInfoCache[videoId],    dataType: .nextInfo,        into: &staleFields),
-            endCards:        staleOrFresh(endCardsCache[videoId],    dataType: .endCards,        into: &staleFields),
-            sponsorSegments: staleOrFresh(sponsorCache[videoId],     dataType: .sponsorSegments, into: &staleFields),
-            deArrowBranding: staleOrFresh(deArrowCache[videoId],     dataType: .deArrowBranding, into: &staleFields),
-            staleFields:     staleFields
+            playerInfo: fresh(playerInfoCache[videoId]),
+            trackingURLs: trackingCache[videoId].flatMap { $0.isExpired ? nil : $0.value },
+            nextInfo: staleOrFresh(nextInfoCache[videoId], dataType: .nextInfo, into: &staleFields),
+            endCards: staleOrFresh(endCardsCache[videoId], dataType: .endCards, into: &staleFields),
+            sponsorSegments: staleOrFresh(sponsorCache[videoId], dataType: .sponsorSegments, into: &staleFields),
+            deArrowBranding: staleOrFresh(deArrowCache[videoId], dataType: .deArrowBranding, into: &staleFields),
+            staleFields: staleFields
         )
         cacheLog.notice("[consume] \(videoId, privacy: .public) — player=\(data.playerInfo != nil, privacy: .public) tracking=\(data.trackingURLs != nil, privacy: .public) next=\(data.nextInfo != nil, privacy: .public) endCards=\(data.endCards != nil, privacy: .public) sponsor=\(data.sponsorSegments != nil, privacy: .public) deArrow=\(data.deArrowBranding != nil, privacy: .public) stale=\(staleFields.count, privacy: .public) complete=\(data.isComplete, privacy: .public)")
         return data
@@ -401,7 +412,7 @@ public actor InternalVideoPreloadCache {
     /// NOT subject to consume() eviction — survives across multiple load() calls.
     public func store(wkHLSManifestURL url: URL, for videoId: String) {
         cacheLog.notice("[store] wkHLS \(videoId) url=\(url.absoluteString.prefix(80))")
-        wkHLSCache[videoId] = CacheEntry(value: url, storedAt: .init(), ttl: 4 * 3_600)
+        wkHLSCache[videoId] = CacheEntry(value: url, storedAt: .init(), ttl: 4 * 3600)
     }
 
     /// Returns the cached WKWebView HLS master manifest URL if still within TTL, else nil.
@@ -455,19 +466,18 @@ public actor InternalVideoPreloadCache {
         // same video reuses this in-flight task instead of issuing a second request.
         let playerFetchTask = getOrFetchPlayerInfo(videoId: videoId)
         // Gate optional fetches on the current network path (Phase K).
-        async let nextResult     = allowed.contains("nextInfo")          ? (try? await api.fetchNextInfo(videoId: videoId))  : nil
-        async let endCardsResult = allowed.contains("endCards")          ? (try? await api.fetchEndCards(videoId: videoId))  : nil
-        async let sponsorResult  = await sponsorBlock.fetchSegments(videoId: videoId, categories: sponsorCategories)
-        async let deArrowResult  = allowed.contains("deArrowBranding")   ? await deArrow.fetchBranding(videoId: videoId) : nil
+        async let nextResult = await allowed.contains("nextInfo") ? (try? api.fetchNextInfo(videoId: videoId)) : nil
+        async let endCardsResult = await allowed.contains("endCards") ? (try? api.fetchEndCards(videoId: videoId)) : nil
+        async let sponsorResult = await sponsorBlock.fetchSegments(videoId: videoId, categories: sponsorCategories)
+        async let deArrowResult = allowed.contains("deArrowBranding") ? await deArrow.fetchBranding(videoId: videoId) : nil
 
         // Pass the caller-supplied token directly — no dependency on api.authToken being set —
         // eliminating the actor-timing race that caused tracking=false on browse-phase prefetch.
         // This runs concurrently with the 5 child tasks above (all are in flight by this point).
-        let tracking: PlaybackTrackingURLs?
-        if let token = authToken {
-            tracking = await api.fetchAuthenticatedTrackingURLs(videoId: videoId, usingToken: token)
+        let tracking: PlaybackTrackingURLs? = if let token = authToken {
+            await api.fetchAuthenticatedTrackingURLs(videoId: videoId, usingToken: token)
         } else {
-            tracking = nil
+            nil
         }
 
         let (next, cards, sponsor, dearrow) =
@@ -478,12 +488,12 @@ public actor InternalVideoPreloadCache {
 
         let elapsed = String(format: "%.2fs", Date().timeIntervalSince(startedAt))
 
-        if let player  { store(playerInfo: player,          for: videoId) }
-        store(trackingURLs: tracking,                        for: videoId)
-        if let next    { store(nextInfo: next,               for: videoId) }
-        if let cards   { store(endCards: cards,              for: videoId) }
-        store(sponsorSegments: sponsor,                      for: videoId)
-        if let dearrow { store(deArrowBranding: dearrow,     for: videoId) }
+        if let player { store(playerInfo: player, for: videoId) }
+        store(trackingURLs: tracking, for: videoId)
+        if let next { store(nextInfo: next, for: videoId) }
+        if let cards { store(endCards: cards, for: videoId) }
+        store(sponsorSegments: sponsor, for: videoId)
+        if let dearrow { store(deArrowBranding: dearrow, for: videoId) }
 
         cacheLog.notice("[prefetch] DONE \(videoId, privacy: .public) elapsed=\(elapsed, privacy: .public) playerInfo=\(player != nil, privacy: .public) tracking=\(tracking != nil, privacy: .public) next=\(next != nil, privacy: .public) endCards=\(cards != nil, privacy: .public) sponsor=\(sponsor.count, privacy: .public) deArrow=\(dearrow != nil, privacy: .public)")
         prefetchTasks.removeValue(forKey: videoId)
@@ -503,6 +513,7 @@ public actor InternalVideoPreloadCache {
             endCardsCache.removeValue(forKey: evict)
             sponsorCache.removeValue(forKey: evict)
             deArrowCache.removeValue(forKey: evict)
+            wkHLSCache.removeValue(forKey: evict)
             prefetchTasks[evict]?.cancel()
             prefetchTasks.removeValue(forKey: evict)
         }
@@ -533,17 +544,16 @@ public actor InternalVideoPreloadCache {
 /// Fields in `staleFields` have data but are past their TTL — callers can use the stale
 /// value immediately and revalidate in the background (stale-while-revalidate pattern).
 public struct CachedInternalVideoData: Sendable {
-
     /// SWR-eligible data types. `playerInfo` and `trackingURLs` are NOT SWR-eligible
     /// (CDN/token-bound — stale stream URLs cause 403; stale tokens cause auth failures).
     public enum DataType: CaseIterable, Sendable {
         case nextInfo, endCards, sponsorSegments, deArrowBranding
     }
 
-    public let playerInfo:      PlayerInfo?
-    public let trackingURLs:    PlaybackTrackingURLs??   // outer nil = not cached, inner nil = cached as "no URLs"
-    public let nextInfo:        NextInfo?
-    public let endCards:        [EndCard]?
+    public let playerInfo: PlayerInfo?
+    public let trackingURLs: PlaybackTrackingURLs?? // outer nil = not cached, inner nil = cached as "no URLs"
+    public let nextInfo: NextInfo?
+    public let endCards: [EndCard]?
     public let sponsorSegments: [SponsorSegment]?
     public let deArrowBranding: DeArrowService.BrandingInfo?
     /// Data types that are present but past their TTL. Non-empty means the value was

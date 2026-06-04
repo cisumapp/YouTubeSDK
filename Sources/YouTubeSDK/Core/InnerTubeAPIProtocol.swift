@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - InnerTubeAPIProtocol
+
 //
 // The dependency interface for all four feed ViewModels (Home, Browse, Search,
 // Playlist).  Decouples ViewModels from the concrete InnerTubeAPI actor so
@@ -11,12 +12,13 @@ import Foundation
 // Swift — the actor's isolation guarantees safe concurrent access.
 
 public protocol InnerTubeAPIProtocol: AnyObject, Sendable {
-
     // MARK: Auth
+
     func setAuthToken(_ token: String?) async
     func setSAPISID(_ value: String?) async
 
     // MARK: Home / browse
+
     func fetchHome(continuationToken: String?) async throws -> InternalVideoGroup
     func fetchHomeRows(continuationToken: String?) async throws -> [InternalVideoGroup]
     func fetchSubscriptions(continuationToken: String?) async throws -> InternalVideoGroup
@@ -30,22 +32,27 @@ public protocol InnerTubeAPIProtocol: AnyObject, Sendable {
     func fetchSports() async throws -> InternalVideoGroup
 
     // MARK: Library
+
     func fetchUserPlaylists() async throws -> [PlaylistInfo]
     func fetchSubscribedChannels() async throws -> [Channel]
 
     // MARK: Channel
+
     func fetchChannelThumbnailURL(channelId: String) async throws -> URL?
     func fetchChannel(channelId: String) async throws -> (channel: Channel, videos: InternalVideoGroup)
     func fetchChannelInternalVideos(channelId: String, continuationToken: String?) async throws -> InternalVideoGroup
 
     // MARK: Search
+
     func search(query: String, continuationToken: String?, filter: SearchFilter) async throws -> InternalVideoGroup
     func fetchSearchSuggestions(query: String) async throws -> [String]
 
     // MARK: Playlist
+
     func fetchPlaylistInternalVideos(playlistId: String, continuationToken: String?) async throws -> InternalVideoGroup
 
     // MARK: Playlist editing
+
     func addToWatchLater(videoId: String) async throws
     func removeFromWatchLater(videoId: String) async throws
     func sendFeedback(token: String) async throws
@@ -54,7 +61,6 @@ public protocol InnerTubeAPIProtocol: AnyObject, Sendable {
 // MARK: - Default-parameter convenience wrappers
 
 public extension InnerTubeAPIProtocol {
-
     /// Fetches the flat recommended home feed from the first page.
     func fetchHome() async throws -> InternalVideoGroup {
         try await fetchHome(continuationToken: nil)

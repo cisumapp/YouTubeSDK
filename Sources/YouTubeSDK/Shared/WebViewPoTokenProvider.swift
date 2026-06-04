@@ -11,22 +11,21 @@ import WebKit
 
 /// A PoToken provider that extracts tokens natively on-device using a headless WKWebView.
 public final class WebViewPoTokenProvider: NSObject, PoTokenProvider, WKScriptMessageHandler, @unchecked Sendable {
-    
     private var activeContinuations: [String: [CheckedContinuation<String, Error>]] = [:]
     private var webViews: [String: WKWebView] = [:]
-    
-    public override init() {
+
+    override public init() {
         super.init()
     }
-    
+
     public func token(for videoId: String) async throws -> String {
-        return try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.main.async {
                 self.startExtraction(videoId: videoId, continuation: continuation)
             }
         }
     }
-    
+
     @MainActor
     private func startExtraction(videoId: String, continuation: CheckedContinuation<String, Error>) {
         if var conts = activeContinuations[videoId] {
@@ -34,12 +33,12 @@ public final class WebViewPoTokenProvider: NSObject, PoTokenProvider, WKScriptMe
             activeContinuations[videoId] = conts
             return
         }
-        
+
         activeContinuations[videoId] = [continuation]
-        
+
         let config = WKWebViewConfiguration()
         let userContentController = WKUserContentController()
-        
+
         let js = """
         (function() {
             const originalFetch = window.fetch;
@@ -88,46 +87,47 @@ public final class WebViewPoTokenProvider: NSObject, PoTokenProvider, WKScriptMe
             }, 1000);
         })();
         """
-        
+
         let script = WKUserScript(source: js, injectionTime: .atDocumentStart, forMainFrameOnly: false)
         userContentController.addUserScript(script)
         userContentController.add(self, name: "poTokenHandler")
         config.userContentController = userContentController
-        
+
         config.mediaTypesRequiringUserActionForPlayback = []
         #if os(iOS)
         config.allowsInlineMediaPlayback = true
         #endif
-        
+
         let webView = WKWebView(frame: .zero, configuration: config)
         // Optionally attach to a view hierarchy or just retain it
-        self.webViews[videoId] = webView
-        
+        webViews[videoId] = webView
+
         let url = URL(string: "https://www.youtube.com/embed/\(videoId)")!
         webView.load(URLRequest(url: url))
-        
+
         // Timeout
         DispatchQueue.main.asyncAfter(deadline: .now() + 15.0) { [weak self] in
-            guard let self = self else { return }
-            if let conts = self.activeContinuations[videoId] {
+            guard let self else { return }
+            if let conts = activeContinuations[videoId] {
                 for cont in conts {
                     cont.resume(throwing: NSError(domain: "YouTubeSDK", code: 3, userInfo: [NSLocalizedDescriptionKey: "Timeout waiting for poToken from WebView"]))
                 }
-                self.activeContinuations.removeValue(forKey: videoId)
-                self.webViews.removeValue(forKey: videoId)
+                activeContinuations.removeValue(forKey: videoId)
+                webViews.removeValue(forKey: videoId)
             }
         }
     }
-    
-    public func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+
+    public func userContentController(_: WKUserContentController, didReceive message: WKScriptMessage) {
         DispatchQueue.main.async {
             guard message.name == "poTokenHandler",
                   let body = message.body as? [String: Any],
                   let videoId = body["videoId"] as? String,
-                  let poToken = body["poToken"] as? String else {
+                  let poToken = body["poToken"] as? String
+            else {
                 return
             }
-            
+
             if let conts = self.activeContinuations[videoId] {
                 for cont in conts {
                     cont.resume(returning: poToken)

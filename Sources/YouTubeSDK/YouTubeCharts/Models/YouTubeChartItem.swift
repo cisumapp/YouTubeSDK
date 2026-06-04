@@ -7,24 +7,24 @@
 
 import Foundation
 
-public struct YouTubeChartItem: Identifiable, Sendable {
+public struct YouTubeChartItem: Identifiable, Sendable, Codable {
     public let id: String
     public let title: String
     public let subtitle: String // Artist or Channel Name
     public let rank: String
     public let thumbnailURL: URL?
     public let type: ChartItemType
-    
+
     // Metadata
     public let viewCount: String?
     public let change: String? // e.g., "NEW", "+1", "-3"
-    
-    public enum ChartItemType: String, Sendable {
+
+    public enum ChartItemType: String, Sendable, Codable {
         case song
         case video
         case artist
     }
-    
+
     /// Robust Initializer for Charts
     init?(from data: [String: Any], type: ChartItemType) {
         let payload = Self.unwrapAnalyticsPayload(data)
@@ -32,7 +32,7 @@ public struct YouTubeChartItem: Identifiable, Sendable {
         guard let resolvedID = Self.extractID(from: payload) else { return nil }
         self.id = resolvedID
         self.type = type
-        
+
         self.title = Self.extractText(from: payload["title"]) ?? Self.extractText(from: payload["name"]) ?? "Unknown"
 
         self.subtitle = Self.extractText(from: payload["subtitle"])
@@ -58,7 +58,7 @@ public struct YouTubeChartItem: Identifiable, Sendable {
         let modelKeys = [
             "musicAnalyticsTrackViewModel",
             "musicAnalyticsVideoViewModel",
-            "musicAnalyticsArtistViewModel"
+            "musicAnalyticsArtistViewModel",
         ]
         for key in modelKeys {
             if let nested = data[key] as? [String: Any] {
@@ -92,12 +92,14 @@ public struct YouTubeChartItem: Identifiable, Sendable {
         }
         if let nav = data["navigationEndpoint"] as? [String: Any],
            let watch = nav["watchEndpoint"] as? [String: Any],
-           let vid = watch["videoId"] as? String {
+           let vid = watch["videoId"] as? String
+        {
             return vid
         }
         if let nav = data["navigationEndpoint"] as? [String: Any],
            let browse = nav["browseEndpoint"] as? [String: Any],
-           let browseID = browse["browseId"] as? String {
+           let browseID = browse["browseId"] as? String
+        {
             return browseID
         }
         return nil
@@ -141,14 +143,15 @@ public struct YouTubeChartItem: Identifiable, Sendable {
 
     private static func extractFlexSubtitle(from data: [String: Any]) -> String? {
         guard let flex = data["flexColumns"] as? [[String: Any]], flex.count > 1,
-              let textData = (flex[1]["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any])?["text"] else {
+              let textData = (flex[1]["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any])?["text"]
+        else {
             return nil
         }
         return Self.extractText(from: textData)
     }
 
     private static func extractRank(from data: [String: Any]) -> String? {
-        if let rank = Self.extractText(from: data["rank"]) {
+        if let rank = extractText(from: data["rank"]) {
             return rank
         }
         if let rank = Self.extractText(from: data["chartRank"]) {
@@ -163,7 +166,8 @@ public struct YouTubeChartItem: Identifiable, Sendable {
             }
         }
         if let indexCol = (data["customIndexColumn"] as? [String: Any])?["musicCustomIndexColumnRenderer"] as? [String: Any],
-           let textData = indexCol["text"] {
+           let textData = indexCol["text"]
+        {
             return Self.extractText(from: textData)
         }
         return nil
@@ -174,7 +178,7 @@ public struct YouTubeChartItem: Identifiable, Sendable {
             data["thumbnailDetails"],
             data["thumbnail"],
             data["musicThumbnailRenderer"],
-            data["thumbnails"]
+            data["thumbnails"],
         ]
 
         for candidate in candidates {
@@ -188,13 +192,15 @@ public struct YouTubeChartItem: Identifiable, Sendable {
 
     private static func thumbnailURL(from value: Any?) -> URL? {
         if let thumbs = value as? [[String: Any]],
-           let urlString = thumbs.last?["url"] as? String {
+           let urlString = thumbs.last?["url"] as? String
+        {
             return URL(string: urlString)
         }
 
         if let dict = value as? [String: Any] {
             if let thumbs = dict["thumbnails"] as? [[String: Any]],
-               let urlString = thumbs.last?["url"] as? String {
+               let urlString = thumbs.last?["url"] as? String
+            {
                 return URL(string: urlString)
             }
 
@@ -211,13 +217,14 @@ public struct YouTubeChartItem: Identifiable, Sendable {
     }
 
     private static func extractChange(from data: [String: Any]) -> String? {
-        if let explicit = Self.extractText(from: data["change"]) ?? Self.extractText(from: data["chartChangeText"]) {
+        if let explicit = extractText(from: data["change"]) ?? extractText(from: data["chartChangeText"]) {
             return explicit
         }
 
         guard let metadata = data["chartEntryMetadata"] as? [String: Any],
               let current = metadata["currentPosition"] as? Int,
-              let previous = metadata["previousPosition"] as? Int else {
+              let previous = metadata["previousPosition"] as? Int
+        else {
             return nil
         }
 

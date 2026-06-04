@@ -7,10 +7,9 @@
 
 import Foundation
 
-extension YouTubeMusicClient {
-    
+public extension YouTubeMusicClient {
     /// Fetches full Artist details (Songs, Albums, Singles)
-    public func getArtist(browseId: String) async throws -> YouTubeMusicArtistDetail {
+    func getArtist(browseId: String) async throws -> YouTubeMusicArtistDetail {
         let body = ["browseId": browseId]
         let data = try await network.get("browse", body: body)
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
@@ -19,16 +18,16 @@ extension YouTubeMusicClient {
         let sections = await parseSections(from: json)
         return YouTubeMusicArtistDetail(id: browseId, sections: sections)
     }
-    
+
     /// Fetches Album details (Tracks)
-    public func getAlbum(browseId: String) async throws -> [YouTubeMusicSong] {
+    func getAlbum(browseId: String) async throws -> [YouTubeMusicSong] {
         let body = ["browseId": browseId]
         let data = try await network.get("browse", body: body)
         return await parseMusicItems(from: data)
     }
-    
+
     /// Fetches Playlist details (Tracks)
-    public func getPlaylist(browseId: String) async throws -> [YouTubeMusicSong] {
+    func getPlaylist(browseId: String) async throws -> [YouTubeMusicSong] {
         let browseId = browseId.hasPrefix("PL") ? "VL\(browseId)" : browseId
         let body = ["browseId": browseId]
         let data = try await network.get("browse", body: body)

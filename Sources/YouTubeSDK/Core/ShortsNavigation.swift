@@ -5,7 +5,6 @@ import Foundation
 /// Separating this from the SwiftUI layer makes it fully unit-testable without
 /// a running simulator or real Shorts content.
 public enum ShortsNavigation {
-
     /// Returns the target index after a swipe gesture, or `nil` when the gesture
     /// should be ignored (too horizontal, below the distance threshold, or already
     /// at a boundary).

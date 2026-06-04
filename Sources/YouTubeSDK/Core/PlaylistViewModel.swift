@@ -5,6 +5,7 @@ import os
 private let playlistLog = ViewModelLogger(category: "Playlist")
 
 // MARK: - QueuedPlaylistLoader
+
 //
 // Seam that decouples PlaylistViewModel from CurrentQueueStore's concrete type.
 // The default adapter (`CurrentQueuePlaylistLoader`) delegates to the store;
@@ -22,8 +23,8 @@ public struct CurrentQueuePlaylistLoader: QueuedPlaylistLoader {
         guard playlistId == CurrentQueueStore.playlistID else { return nil }
         let videos = await CurrentQueueStore.shared.videos
         return videos.enumerated().map { index, v in
-            var copy           = v
-            copy.playlistId    = CurrentQueueStore.playlistID
+            var copy = v
+            copy.playlistId = CurrentQueueStore.playlistID
             copy.playlistIndex = index
             return copy
         }
@@ -31,6 +32,7 @@ public struct CurrentQueuePlaylistLoader: QueuedPlaylistLoader {
 }
 
 // MARK: - PlaylistViewModel
+
 //
 // Fetches and paginates the videos inside a single playlist.
 // Mirrors the Android `PlaylistPresenter`.
@@ -90,7 +92,7 @@ public final class PlaylistViewModel {
     private func fetch() async {
         isLoading = true
         defer { isLoading = false }
-        playlistLog.notice("fetchPlaylistInternalVideos id=\(self.playlistId) page=\(self.nextPageToken ?? "first")")
+        playlistLog.notice("fetchPlaylistInternalVideos id=\(playlistId) page=\(nextPageToken ?? "first")")
         do {
             let group = try await retryWithBackoff(label: "PlaylistVM") {
                 try await api.fetchPlaylistInternalVideos(playlistId: self.playlistId, continuationToken: self.nextPageToken)
@@ -100,7 +102,7 @@ public final class PlaylistViewModel {
                 // can navigate next/prev in the correct order. The offset accounts for
                 // previously-loaded pages so indices are monotonically increasing.
                 let offset = videos.count
-                let tagged = group.videos.enumerated().map { (idx, v) -> InternalVideo in
+                let tagged = group.videos.enumerated().map { idx, v -> InternalVideo in
                     var copy = v
                     copy.playlistId = playlistId
                     copy.playlistIndex = offset + idx
@@ -108,7 +110,7 @@ public final class PlaylistViewModel {
                 }
                 videos.append(contentsOf: tagged)
                 nextPageToken = group.nextPageToken
-                playlistLog.notice("fetchPlaylistInternalVideos → \(tagged.count) videos (total \(self.videos.count))")
+                playlistLog.notice("fetchPlaylistInternalVideos → \(tagged.count) videos (total \(videos.count))")
             }
         } catch {
             if !Task.isCancelled {

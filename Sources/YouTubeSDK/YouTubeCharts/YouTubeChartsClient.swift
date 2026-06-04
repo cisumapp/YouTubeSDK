@@ -8,10 +8,9 @@
 import Foundation
 
 public actor YouTubeChartsClient {
-    
     private let analyticsNetwork: NetworkClient
     private let musicNetwork: NetworkClient
-    
+
     public init() {
         let analyticsContext = InnerTubeContext(client: ClientConfig.webMusicAnalytics)
         self.analyticsNetwork = NetworkClient(
@@ -22,32 +21,32 @@ public actor YouTubeChartsClient {
         let musicContext = InnerTubeContext(client: ClientConfig.webRemix)
         self.musicNetwork = NetworkClient(context: musicContext, baseURL: YouTubeSDKConstants.URLS.API.youtubeMusicInnerTubeURL)
     }
-    
+
     // MARK: - Global & Local Charts
-    
+
     /// Top Songs Chart
     /// - Parameter country: ISO 3166-1 alpha-2 code (e.g., "US", "IN", "JP", "ZZ" for Global)
     public func getTopSongs(country: String = "ZZ") async throws -> [YouTubeChartItem] {
-        return try await fetchChart(country: country, type: .song, sectionKeywords: ["song"])
+        try await fetchChart(country: country, type: .song, sectionKeywords: ["song"])
     }
-    
+
     /// Top Music Videos Chart
     public func getTopVideos(country: String = "ZZ") async throws -> [YouTubeChartItem] {
-        return try await fetchChart(country: country, type: .video, sectionKeywords: ["video"])
+        try await fetchChart(country: country, type: .video, sectionKeywords: ["video"])
     }
-    
+
     /// Top Artists Chart
     public func getTopArtists(country: String = "ZZ") async throws -> [YouTubeChartItem] {
-        return try await fetchChart(country: country, type: .artist, sectionKeywords: ["artist"])
+        try await fetchChart(country: country, type: .artist, sectionKeywords: ["artist"])
     }
-    
+
     /// Trending (Global/Local)
     public func getTrending(country: String = "ZZ") async throws -> [YouTubeChartItem] {
-        return try await fetchChart(country: country, type: .video, sectionKeywords: ["trending", "video"])
+        try await fetchChart(country: country, type: .video, sectionKeywords: ["trending", "video"])
     }
-    
+
     // MARK: - Private Helpers
-    
+
     private func fetchChart(
         country: String,
         type: YouTubeChartItem.ChartItemType,
@@ -59,7 +58,7 @@ public actor YouTubeChartsClient {
             "browse",
             body: [
                 "browseId": "FEmusic_analytics_charts_home",
-                "query": "perspective=CHART_HOME&chart_params_country_code=\(countryCode)"
+                "query": "perspective=CHART_HOME&chart_params_country_code=\(countryCode)",
             ],
             queryItems: [URLQueryItem(name: "alt", value: "json")],
             additionalHeaders: ["X-Goog-Api-Format-Version": "2"]
@@ -72,11 +71,12 @@ public actor YouTubeChartsClient {
 
         if let legacyBrowseID = legacyBrowseID(for: type),
            let legacyAnalyticsData = try? await analyticsNetwork.sendComplexRequest(
-                "browse",
-                body: ["browseId": legacyBrowseID],
-                queryItems: [URLQueryItem(name: "alt", value: "json")],
-                additionalHeaders: ["X-Goog-Api-Format-Version": "2"]
-           ) {
+               "browse",
+               body: ["browseId": legacyBrowseID],
+               queryItems: [URLQueryItem(name: "alt", value: "json")],
+               additionalHeaders: ["X-Goog-Api-Format-Version": "2"]
+           )
+        {
             let parsedLegacy = parseCharts(from: legacyAnalyticsData, type: type, sectionKeywords: sectionKeywords)
             if !parsedLegacy.isEmpty {
                 return parsedLegacy
@@ -100,18 +100,18 @@ public actor YouTubeChartsClient {
     private nonisolated func legacyBrowseID(for type: YouTubeChartItem.ChartItemType) -> String? {
         switch type {
         case .song:
-            return "FEmusic_analytics_charts_songs"
+            "FEmusic_analytics_charts_songs"
         case .video:
-            return "FEmusic_analytics_charts_videos"
+            "FEmusic_analytics_charts_videos"
         case .artist:
             // This endpoint currently returns INVALID_ARGUMENT on charts.youtube.com.
             // Keep artists on the charts home payload path instead of triggering noisy failures.
-            return nil
+            nil
         }
     }
-    
+
     // MARK: - Parsing Logic
-    
+
     private func parseCharts(
         from data: Data,
         type: YouTubeChartItem.ChartItemType,
@@ -128,21 +128,22 @@ public actor YouTubeChartsClient {
         if !analyticsItems.isEmpty {
             return analyticsItems
         }
-        
+
         var items: [YouTubeChartItem] = []
         var seenIDs = Set<String>()
-        
+
         // Charts uses "musicResponsiveListItemRenderer" (Songs/Videos) and "musicTableRowRenderer" (Artists)
         let rowRenderers = findAll(key: "musicResponsiveListItemRenderer", in: json) + findAll(key: "musicTableRowRenderer", in: json)
-        
+
         for renderer in rowRenderers {
             if let dict = renderer as? [String: Any],
                let item = YouTubeChartItem(from: dict, type: type),
-               seenIDs.insert(item.id).inserted {
+               seenIDs.insert(item.id).inserted
+            {
                 items.append(item)
             }
         }
-        
+
         return items
     }
 
@@ -170,7 +171,8 @@ public actor YouTubeChartsClient {
             for entry in entries {
                 if let dict = entry as? [String: Any],
                    let item = YouTubeChartItem(from: dict, type: type),
-                   seenIDs.insert(item.id).inserted {
+                   seenIDs.insert(item.id).inserted
+                {
                     items.append(item)
                 }
             }
@@ -182,14 +184,13 @@ public actor YouTubeChartsClient {
     private func analyticsEntries(in section: [String: Any], type: YouTubeChartItem.ChartItemType) -> [Any] {
         var entries: [Any] = []
 
-        let preferredKeys: [String]
-        switch type {
+        let preferredKeys: [String] = switch type {
         case .song:
-            preferredKeys = ["trackViews", "tracks", "songs"]
+            ["trackViews", "tracks", "songs"]
         case .video:
-            preferredKeys = ["videoViews", "trendingVideos"]
+            ["videoViews", "trendingVideos"]
         case .artist:
-            preferredKeys = ["artistViews"]
+            ["artistViews"]
         }
 
         for key in preferredKeys {
@@ -204,7 +205,8 @@ public actor YouTubeChartsClient {
                 for trackType in trackTypes {
                     if let trackTypeDict = trackType as? [String: Any],
                        let found = entriesArray(for: "trackViews", in: trackTypeDict),
-                       !found.isEmpty {
+                       !found.isEmpty
+                    {
                         entries.append(contentsOf: found)
                     }
                 }
@@ -214,7 +216,8 @@ public actor YouTubeChartsClient {
                 for videosList in videos {
                     if let videosListDict = videosList as? [String: Any],
                        let found = entriesArray(for: "videoViews", in: videosListDict),
-                       !found.isEmpty {
+                       !found.isEmpty
+                    {
                         entries.append(contentsOf: found)
                     }
                 }
@@ -222,7 +225,8 @@ public actor YouTubeChartsClient {
         case .artist:
             if let artistsContainer = section["artists"] as? [String: Any],
                let found = entriesArray(for: "artistViews", in: artistsContainer),
-               !found.isEmpty {
+               !found.isEmpty
+            {
                 entries.append(contentsOf: found)
             }
         }
@@ -246,7 +250,8 @@ public actor YouTubeChartsClient {
             return direct
         }
         if let wrapped = section[key] as? [String: Any],
-           let items = wrapped["items"] as? [Any] {
+           let items = wrapped["items"] as? [Any]
+        {
             return items
         }
         return nil
@@ -269,14 +274,18 @@ public actor YouTubeChartsClient {
         }
         return nil
     }
-    
+
     private func findAll(key: String, in container: Any) -> [Any] {
         var results: [Any] = []
         if let dict = container as? [String: Any] {
             if let found = dict[key] { results.append(found) }
-            for value in dict.values { results.append(contentsOf: findAll(key: key, in: value)) }
+            for value in dict.values {
+                results.append(contentsOf: findAll(key: key, in: value))
+            }
         } else if let array = container as? [Any] {
-            for element in array { results.append(contentsOf: findAll(key: key, in: element)) }
+            for element in array {
+                results.append(contentsOf: findAll(key: key, in: element))
+            }
         }
         return results
     }

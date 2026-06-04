@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - iCloudSyncManager
+
 //
 // Manages bidirectional sync of actor-based stores to NSUbiquitousKeyValueStore.
 // Stores call push(_:_:) after every persist() mutation when sync is enabled.
@@ -15,15 +16,14 @@ import Foundation
 
 public enum SyncableStore: String, Sendable {
     case subscriptions = "smarttube_subscriptions"
-    case rssFeeds      = "smarttube_rss_feeds"
-    case videoState    = "smarttube_video_state"
-    case currentQueue  = "smarttube_current_queue"
+    case rssFeeds = "smarttube_rss_feeds"
+    case videoState = "smarttube_video_state"
+    case currentQueue = "smarttube_current_queue"
 }
 
 // MARK: - iCloudSyncManager
 
 public actor iCloudSyncManager {
-
     // MARK: - Singleton
 
     public static let shared = iCloudSyncManager()
@@ -46,7 +46,9 @@ public actor iCloudSyncManager {
 
     /// Stream of stores that received an external update from another device.
     /// Observe this stream to reload a store's in-memory state from iCloud.
-    public nonisolated var changes: AsyncStream<SyncableStore> { externalChanges }
+    public nonisolated var changes: AsyncStream<SyncableStore> {
+        externalChanges
+    }
 
     // MARK: - Lifecycle
 
@@ -77,7 +79,7 @@ public actor iCloudSyncManager {
 
     /// Encodes `value` as JSON and pushes it to the iCloud KV store.
     /// No-op when `syncEnabled` is `false`.
-    public func push<T: Codable & Sendable>(_ store: SyncableStore, _ value: T) {
+    public func push(_ store: SyncableStore, _ value: some Codable & Sendable) {
         guard syncEnabled else { return }
         guard let data = try? JSONEncoder().encode(value) else { return }
         kvStore.set(data, forKey: store.rawValue)
@@ -104,8 +106,10 @@ public actor iCloudSyncManager {
             object: nil,
             queue: nil
         ) { [weak self] notification in
-            let changedKeys = (notification.userInfo?[NSUbiquitousKeyValueStoreChangedKeysKey]
-                as? [String]) ?? []
+            let changedKeys = (
+                notification.userInfo?[NSUbiquitousKeyValueStoreChangedKeysKey]
+                    as? [String]
+            ) ?? []
             Task { await self?.handleExternalChange(changedKeys) }
         }
     }

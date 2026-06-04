@@ -2,7 +2,9 @@ import Foundation
 
 public struct JSONSendable: @unchecked Sendable {
     public let value: [String: Any]
-    public init(_ value: [String: Any]) { self.value = value }
+    public init(_ value: [String: Any]) {
+        self.value = value
+    }
 }
 
 extension InnerTubeAPI {

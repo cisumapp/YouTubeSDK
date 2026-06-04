@@ -2,17 +2,19 @@ import XCTest
 @testable import YouTubeSDK
 
 final class LiveAPITests: XCTestCase {
-    
     @MainActor
     func testHomeFeed() async throws {
         // Setup storage first
         struct MockStorage: YouTubeSDKStorage {
-            func save(_ value: String, key: String) {}
-            func load(key: String) -> String? { nil }
-            func delete(key: String) {}
+            func save(_: String, key _: String) {}
+            func load(key _: String) -> String? {
+                nil
+            }
+
+            func delete(key _: String) {}
         }
         YouTubeSDKConfig.storage = MockStorage()
-        
+
         let youtube = YouTube.shared
         do {
             let continuation = try await youtube.main.getHome()
@@ -22,16 +24,19 @@ final class LiveAPITests: XCTestCase {
             XCTFail("Home feed fetch failed with error: \(error)")
         }
     }
-    
+
     @MainActor
     func testMusicSearch() async throws {
         struct MockStorage: YouTubeSDKStorage {
-            func save(_ value: String, key: String) {}
-            func load(key: String) -> String? { nil }
-            func delete(key: String) {}
+            func save(_: String, key _: String) {}
+            func load(key _: String) -> String? {
+                nil
+            }
+
+            func delete(key _: String) {}
         }
         YouTubeSDKConfig.storage = MockStorage()
-        
+
         let youtube = YouTube.shared
         do {
             let results = try await youtube.music.search("vultures kany west")
@@ -41,16 +46,19 @@ final class LiveAPITests: XCTestCase {
             XCTFail("Music search failed with error: \(error)")
         }
     }
-    
+
     @MainActor
     func testVideoResolution() async throws {
         struct MockStorage: YouTubeSDKStorage {
-            func save(_ value: String, key: String) {}
-            func load(key: String) -> String? { nil }
-            func delete(key: String) {}
+            func save(_: String, key _: String) {}
+            func load(key _: String) -> String? {
+                nil
+            }
+
+            func delete(key _: String) {}
         }
         YouTubeSDKConfig.storage = MockStorage()
-        
+
         let youtube = YouTube.shared
         do {
             // Test with a known video ID
@@ -62,16 +70,19 @@ final class LiveAPITests: XCTestCase {
             XCTFail("Video resolution failed with error: \(error)")
         }
     }
-    
+
     @MainActor
     func testCharts() async throws {
         struct MockStorage: YouTubeSDKStorage {
-            func save(_ value: String, key: String) {}
-            func load(key: String) -> String? { nil }
-            func delete(key: String) {}
+            func save(_: String, key _: String) {}
+            func load(key _: String) -> String? {
+                nil
+            }
+
+            func delete(key _: String) {}
         }
         YouTubeSDKConfig.storage = MockStorage()
-        
+
         let youtube = YouTube.shared
         do {
             let results = try await youtube.charts.getTopSongs(country: "IN")

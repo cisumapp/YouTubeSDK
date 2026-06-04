@@ -8,9 +8,8 @@
 import Foundation
 
 extension YouTubeMusicClient {
-    
     // MARK: - Internal Parsing Helpers
-    
+
     func parseMusicItems(from data: Data) -> [YouTubeMusicSong] {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
 
@@ -24,7 +23,8 @@ extension YouTubeMusicClient {
             for item in cardItems {
                 guard let dict = item as? [String: Any],
                       let song = YouTubeMusicSong(from: dict),
-                      seenVideoIDs.insert(song.videoId).inserted else {
+                      seenVideoIDs.insert(song.videoId).inserted
+                else {
                     continue
                 }
                 songs.append(song)
@@ -35,7 +35,8 @@ extension YouTubeMusicClient {
         for item in items {
             guard let dict = item as? [String: Any],
                   let song = YouTubeMusicSong(from: dict),
-                  seenVideoIDs.insert(song.videoId).inserted else {
+                  seenVideoIDs.insert(song.videoId).inserted
+            else {
                 continue
             }
             songs.append(song)
@@ -65,7 +66,8 @@ extension YouTubeMusicClient {
         let panelRenderers = extractPlaylistPanelVideoRenderers(in: json)
         for renderer in panelRenderers {
             guard let song = YouTubeMusicSong(fromPlaylistPanelRenderer: renderer),
-                  seenVideoIDs.insert(song.videoId).inserted else {
+                  seenVideoIDs.insert(song.videoId).inserted
+            else {
                 continue
             }
             songs.append(song)
@@ -76,7 +78,8 @@ extension YouTubeMusicClient {
             for item in fallbackItems {
                 guard let dict = item as? [String: Any],
                       let song = YouTubeMusicSong(from: dict),
-                      seenVideoIDs.insert(song.videoId).inserted else {
+                      seenVideoIDs.insert(song.videoId).inserted
+                else {
                     continue
                 }
                 songs.append(song)
@@ -137,39 +140,45 @@ extension YouTubeMusicClient {
         let primaryEmail = findFirstString(forKeys: ["email", "emailAddress"], in: json)
         return YouTubeMusicAccountsList(primaryEmail: primaryEmail, accounts: accounts)
     }
-    
+
     func parseSections(from json: [String: Any]) -> [YouTubeMusicSection] {
         var sections: [YouTubeMusicSection] = []
-        
+
         // 1. Carousels (Horizontal)
         let carousels = findAll(key: "musicCarouselShelfRenderer", in: json)
         for carousel in carousels {
             if let dict = carousel as? [String: Any],
-               let section = YouTubeMusicSection(from: dict) {
+               let section = YouTubeMusicSection(from: dict)
+            {
                 sections.append(section)
             }
         }
-        
+
         // 2. Shelves (Vertical)
         let shelves = findAll(key: "musicShelfRenderer", in: json)
         for shelf in shelves {
             if let dict = shelf as? [String: Any],
-               let section = YouTubeMusicSection(from: dict) {
+               let section = YouTubeMusicSection(from: dict)
+            {
                 sections.append(section)
             }
         }
-        
+
         return sections
     }
-    
+
     /// Recursively finds all dictionaries with a specific key.
     func findAll(key: String, in container: Any) -> [Any] {
         var results: [Any] = []
         if let dict = container as? [String: Any] {
             if let found = dict[key] { results.append(found) }
-            for value in dict.values { results.append(contentsOf: findAll(key: key, in: value)) }
+            for value in dict.values {
+                results.append(contentsOf: findAll(key: key, in: value))
+            }
         } else if let array = container as? [Any] {
-            for element in array { results.append(contentsOf: findAll(key: key, in: element)) }
+            for element in array {
+                results.append(contentsOf: findAll(key: key, in: element))
+            }
         }
         return results
     }
@@ -178,7 +187,8 @@ extension YouTubeMusicClient {
         if let dict = container as? [String: Any] {
             if let token = dict["continuation"] as? String { return token }
             if let continuationData = (dict["continuationEndpoint"] as? [String: Any])?["continuationCommand"] as? [String: Any],
-               let token = continuationData["token"] as? String {
+               let token = continuationData["token"] as? String
+            {
                 return token
             }
             for value in dict.values {
@@ -199,7 +209,8 @@ extension YouTubeMusicClient {
     func findNextRadioContinuationToken(in container: Any) -> String? {
         if let dict = container as? [String: Any] {
             if let nextRadio = dict["nextRadioContinuationData"] as? [String: Any],
-               let token = nextRadio["continuation"] as? String {
+               let token = nextRadio["continuation"] as? String
+            {
                 return token
             }
 
@@ -227,7 +238,8 @@ extension YouTubeMusicClient {
 
             if let watchEndpoint = dict["watchEndpoint"] as? [String: Any],
                let playlistId = watchEndpoint["playlistId"] as? String,
-               !playlistId.isEmpty {
+               !playlistId.isEmpty
+            {
                 return playlistId
             }
 
@@ -255,7 +267,8 @@ extension YouTubeMusicClient {
         for wrapper in wrappers {
             guard let dict = wrapper as? [String: Any],
                   let primary = dict["primaryRenderer"] as? [String: Any],
-                  let renderer = primary["playlistPanelVideoRenderer"] as? [String: Any] else {
+                  let renderer = primary["playlistPanelVideoRenderer"] as? [String: Any]
+            else {
                 continue
             }
             renderers.append(renderer)
@@ -276,7 +289,8 @@ extension YouTubeMusicClient {
 
             let browseEndpoint = extractBrowseEndpoint(from: dict)
             guard let browseId = browseEndpoint?["browseId"] as? String,
-                  !browseId.isEmpty else {
+                  !browseId.isEmpty
+            else {
                 continue
             }
 
@@ -296,13 +310,15 @@ extension YouTubeMusicClient {
 
         for value in container.values {
             if let dict = value as? [String: Any],
-               let nested = extractBrowseEndpoint(from: dict) {
+               let nested = extractBrowseEndpoint(from: dict)
+            {
                 return nested
             }
             if let array = value as? [Any] {
                 for entry in array {
                     if let dict = entry as? [String: Any],
-                       let nested = extractBrowseEndpoint(from: dict) {
+                       let nested = extractBrowseEndpoint(from: dict)
+                    {
                         return nested
                     }
                 }
@@ -320,13 +336,15 @@ extension YouTubeMusicClient {
             if let dict = node as? [String: Any] {
                 if let serviceEndpoint = dict["serviceEndpoint"] as? [String: Any],
                    let selectIdentity = serviceEndpoint["selectActiveIdentityEndpoint"] as? [String: Any],
-                   let supportedTokens = selectIdentity["supportedTokens"] as? [[String: Any]] {
+                   let supportedTokens = selectIdentity["supportedTokens"] as? [[String: Any]]
+                {
                     let pageID = supportedTokens
                         .compactMap { ($0["pageIdToken"] as? [String: Any])?["pageId"] as? String }
                         .first { !$0.isEmpty }
 
                     if let pageID,
-                       seenPageIDs.insert(pageID).inserted {
+                       seenPageIDs.insert(pageID).inserted
+                    {
                         let name = resolveText(from: dict["accountName"]) ?? resolveText(from: dict["title"]) ?? "Unknown Account"
                         let handle = resolveText(from: dict["channelHandle"])
                         let isSelected = (dict["isSelected"] as? Bool) ?? false

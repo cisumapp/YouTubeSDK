@@ -4,6 +4,7 @@ import Foundation
 import ActivityKit
 
 // MARK: - DownloadActivityAttributes
+
 //
 // Defines the Live Activity / Dynamic Island data model for video downloads.
 // Both InternalVideoDownloadService (SmartTubeIOS) and the DownloadWidget extension

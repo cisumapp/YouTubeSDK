@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - InternalVideoDiskCache
+
 //
 // Serial-queue-backed disk cache for Phase J.
 // Non-actor — accessed only from InternalVideoPreloadCache actor methods, which provide isolation.
@@ -12,12 +13,11 @@ import Foundation
 // LRU eviction fires when directory size exceeds 20 MB.
 
 final class InternalVideoDiskCache: @unchecked Sendable {
-
     // MARK: - Configuration
 
-    static let maxBytes: Int = 20 * 1024 * 1024   // 20 MB; internal for tests
+    static let maxBytes: Int = 20 * 1024 * 1024 // 20 MB; internal for tests
     private let queue = DispatchQueue(label: "st.disk-cache", qos: .utility)
-    let cacheDir: URL   // internal for tests
+    let cacheDir: URL // internal for tests
 
     // MARK: - Init
 
@@ -33,13 +33,13 @@ final class InternalVideoDiskCache: @unchecked Sendable {
 
     // MARK: - Write (fire-and-forget)
 
-    func store<T: Encodable>(_ value: T, videoId: String, dataType: String) {
+    func store(_ value: some Encodable, videoId: String, dataType: String) {
         let url = fileURL(videoId: videoId, dataType: dataType)
         guard let data = try? JSONEncoder().encode(value) else { return }
         queue.async { [weak self] in
             guard let self else { return }
             try? data.write(to: url, options: .atomic)
-            self.evictIfNeeded()
+            evictIfNeeded()
         }
     }
 
@@ -64,7 +64,7 @@ final class InternalVideoDiskCache: @unchecked Sendable {
         let sorted = files.sorted {
             let d1 = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
             let d2 = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate ?? .distantPast
-            return d1 < d2  // oldest first
+            return d1 < d2 // oldest first
         }
         for file in sorted {
             guard totalSize > Self.maxBytes else { break }
@@ -97,7 +97,7 @@ final class InternalVideoDiskCache: @unchecked Sendable {
     func fileURL(videoId: String, dataType: String) -> URL {
         // Sanitise to prevent path traversal: replace '/' and '..' with '_'
         let safeId = videoId
-            .replacingOccurrences(of: "/",  with: "_")
+            .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "..", with: "_")
         return cacheDir.appendingPathComponent("\(safeId)-\(dataType).json")
     }

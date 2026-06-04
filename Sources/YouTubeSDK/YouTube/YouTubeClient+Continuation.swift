@@ -1,5 +1,5 @@
 //
-//  YouTubeClient+Parsing.swift
+//  YouTubeClient+Continuation.swift
 //  YouTubeSDK
 //
 //  Created by Aarav Gupta on 13/03/26.
@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct SearchResponseDiagnostics: Sendable {
+struct SearchResponseDiagnostics {
     let topLevelKeys: [String]
     let frameworkUpdateCount: Int
     let continuationItemCount: Int
@@ -17,16 +17,15 @@ struct SearchResponseDiagnostics: Sendable {
     var hasParseableContainers: Bool {
         // Only consider a response parseable if it contains direct renderers or continuations.
         // Many responses include EKO template "wrappers" which are not actual search result containers.
-        return directRendererCount > 0 || continuationItemCount > 0
+        directRendererCount > 0 || continuationItemCount > 0
     }
 
     var summary: String {
-        return "topLevelKeys=\(topLevelKeys) frameworkUpdates=\(frameworkUpdateCount) continuationItems=\(continuationItemCount) directRenderers=\(directRendererCount) wrappers=\(wrapperRendererCount) hasParseableContainers=\(hasParseableContainers)"
+        "topLevelKeys=\(topLevelKeys) frameworkUpdates=\(frameworkUpdateCount) continuationItems=\(continuationItemCount) directRenderers=\(directRendererCount) wrappers=\(wrapperRendererCount) hasParseableContainers=\(hasParseableContainers)"
     }
 }
 
 extension YouTubeClient {
-
     // MARK: - Continuation
 
     /// Fetches the next page of results using a continuation token.
@@ -46,7 +45,7 @@ extension YouTubeClient {
                 let body = ["continuation": candidate]
                 do {
                     if attempt == 1 {
-                        print("yt_fetch_continuation token_candidates=\(tokenCandidates.map { $0.count }) endpoints=\(endpointCandidates)")
+                        print("yt_fetch_continuation token_candidates=\(tokenCandidates.map(\.count)) endpoints=\(endpointCandidates)")
                     }
 
                     print("yt_fetch_continuation try attempt=\(attempt) endpoint=\(endpoint) tokenLen=\(candidate.count) tokenHasPercent=\(candidate.contains("%"))")
@@ -83,7 +82,7 @@ extension YouTubeClient {
 
         // Some responses ship continuation tokens in doubly/triply encoded forms.
         // Decode iteratively to produce a small candidate set.
-        for _ in 0..<6 {
+        for _ in 0 ..< 6 {
             guard let decoded = current.removingPercentEncoding, decoded != current else {
                 break
             }
@@ -97,6 +96,7 @@ extension YouTubeClient {
     }
 
     // MARK: - Helpers
+
     func findContinuationToken(in container: Any) -> String? {
         if let dict = container as? [String: Any] {
             if let token = dict["continuation"] as? String { return token }
@@ -113,14 +113,18 @@ extension YouTubeClient {
         }
         return nil
     }
-    
+
     func findAll(key: String, in container: Any) -> [Any] {
         var results: [Any] = []
         if let dict = container as? [String: Any] {
             if let found = dict[key] { results.append(found) }
-            for value in dict.values { results.append(contentsOf: findAll(key: key, in: value)) }
+            for value in dict.values {
+                results.append(contentsOf: findAll(key: key, in: value))
+            }
         } else if let array = container as? [Any] {
-            for element in array { results.append(contentsOf: findAll(key: key, in: element)) }
+            for element in array {
+                results.append(contentsOf: findAll(key: key, in: element))
+            }
         }
         return results
     }
@@ -170,27 +174,28 @@ extension YouTubeClient {
     }
 
     // MARK: - Generic Video Parser (For Channel/Playlist/Home)
+
     func parseVideos(from data: Data) -> [YouTubeVideo] {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
-        
+
         let keys = YouTubeSDKConstants.InternalKeys.Renderers.self
         let videos =
             findAll(key: keys.video, in: json) +
             findAll(key: keys.gridVideo, in: json) +
             findAll(key: keys.compactVideo, in: json) +
             findAll(key: keys.videoWithContext, in: json)
-        
+
         return videos.compactMap { item in
             guard let dict = item as? [String: Any] else { return nil }
             return YouTubeVideo(from: dict)
         }
     }
-    
+
     func parseContinuationResults(from data: Data) -> YouTubeContinuation<YouTubeItem> {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return YouTubeContinuation(items: [], continuationToken: nil)
         }
-        
+
         var results: [YouTubeItem] = []
         let keys = YouTubeSDKConstants.InternalKeys.Renderers.self
         var rawVideoNodes: [Any] = []
@@ -219,7 +224,8 @@ extension YouTubeClient {
 
             // Try plain UTF8 JSON
             if let tplData = tplStr.data(using: .utf8),
-               let parsed = try? JSONSerialization.jsonObject(with: tplData) {
+               let parsed = try? JSONSerialization.jsonObject(with: tplData)
+            {
                 rawVideoNodes.append(contentsOf: findAll(key: keys.video, in: parsed))
                 rawVideoNodes.append(contentsOf: findAll(key: "videoCardRenderer", in: parsed))
                 rawVideoNodes.append(contentsOf: extractPotentialVideoPayloads(from: parsed))
@@ -228,7 +234,8 @@ extension YouTubeClient {
 
             // Try base64 -> JSON
             if let base64Data = Data(base64Encoded: tplStr),
-               let parsed = try? JSONSerialization.jsonObject(with: base64Data) {
+               let parsed = try? JSONSerialization.jsonObject(with: base64Data)
+            {
                 rawVideoNodes.append(contentsOf: findAll(key: keys.video, in: parsed))
                 rawVideoNodes.append(contentsOf: extractPotentialVideoPayloads(from: parsed))
                 continue
@@ -237,7 +244,8 @@ extension YouTubeClient {
             // Some templates are double-encoded: try base64 after percent-decoding
             if let percentDecoded = tplStr.removingPercentEncoding,
                let base64Data2 = Data(base64Encoded: percentDecoded),
-               let parsed2 = try? JSONSerialization.jsonObject(with: base64Data2) {
+               let parsed2 = try? JSONSerialization.jsonObject(with: base64Data2)
+            {
                 rawVideoNodes.append(contentsOf: findAll(key: keys.video, in: parsed2))
                 rawVideoNodes.append(contentsOf: extractPotentialVideoPayloads(from: parsed2))
             }
@@ -248,41 +256,42 @@ extension YouTubeClient {
         let songs = findAll(key: keys.musicResponsiveListItem, in: json)
         let shelves = findAll(key: keys.musicShelf, in: json)
         let carousels = findAll(key: keys.musicCarouselShelf, in: json)
-        
+
         var seenVideoIds = Set<String>()
-        videos.forEach { dict in
+        for dict in videos {
             if let video = YouTubeVideo(from: dict),
-               seenVideoIds.insert(video.id).inserted {
+               seenVideoIds.insert(video.id).inserted
+            {
                 results.append(.video(video))
             }
         }
-        
-        channels.forEach { item in
+
+        for item in channels {
             if let dict = item as? [String: Any], let channel = YouTubeChannel(from: dict) {
                 results.append(.channel(channel))
             }
         }
-        
-        playlists.forEach { item in
+
+        for item in playlists {
             if let dict = item as? [String: Any], let playlist = YouTubePlaylist(from: dict) {
                 results.append(.playlist(playlist))
             }
         }
-        
-        songs.forEach { item in
+
+        for item in songs {
             if let dict = item as? [String: Any], let song = YouTubeMusicSong(from: dict) {
                 results.append(.song(song))
             }
         }
-        
-        (shelves + carousels).forEach { item in
+
+        for item in shelves + carousels {
             if let dict = item as? [String: Any], let title = (dict["title"] as? [String: Any])?["simpleText"] as? String {
                 results.append(.shelf(YouTubeShelf(title: title, items: [])))
             }
         }
-        
+
         let token = findContinuationToken(in: json)
-        
+
         return YouTubeContinuation(items: results, continuationToken: token)
     }
 }
@@ -293,7 +302,7 @@ extension YouTubeClient {
 /// richItemRenderer/itemSectionRenderer/shelfRenderer/content arrays.
 func extractPotentialVideoPayloads(from container: Any) -> [[String: Any]] {
     var out: [[String: Any]] = []
-    
+
     if let dict = container as? [String: Any] {
         let keys = YouTubeSDKConstants.InternalKeys.Renderers.self
         let directKeys = [
@@ -301,16 +310,16 @@ func extractPotentialVideoPayloads(from container: Any) -> [[String: Any]] {
             keys.gridVideo,
             keys.compactVideo,
             keys.videoWithContext,
-            keys.reelItem
+            keys.reelItem,
         ]
         let extraDirect = [
             "videoCardRenderer",
             "videoLockupRenderer",
             "videoLockup",
             "video_model",
-            "video_model_renderer"
+            "video_model_renderer",
         ]
-        
+
         for key in directKeys {
             if let payload = dict[key] as? [String: Any] {
                 out.append(payload)
@@ -321,12 +330,12 @@ func extractPotentialVideoPayloads(from container: Any) -> [[String: Any]] {
                 out.append(payload)
             }
         }
-        
+
         // If this dictionary itself is already a video-like payload.
         if dict["videoId"] as? String != nil {
             out.append(dict)
         }
-        
+
         if let content = dict["content"] {
             out.append(contentsOf: extractPotentialVideoPayloads(from: content))
         }
@@ -341,6 +350,6 @@ func extractPotentialVideoPayloads(from container: Any) -> [[String: Any]] {
             out.append(contentsOf: extractPotentialVideoPayloads(from: element))
         }
     }
-    
+
     return out
 }

@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - YouTubeRSS
+
 //
 // URL construction helpers for YouTube's public Atom/RSS feeds.
 // No authentication required — the same feeds any RSS reader uses.
@@ -13,7 +14,6 @@ import Foundation
 // channels whose playlist ID doesn't follow the standard UC→UU mapping.
 
 public enum YouTubeRSS {
-
     // MARK: - Playlist ID derivation
 
     /// Converts a YouTube channel ID ("UCxxxx") to its uploads playlist ID ("UUxxxx").
@@ -38,7 +38,7 @@ public enum YouTubeRSS {
     /// Used when the playlist variant returns 404 (e.g. handle-based or legacy channels).
     public static func fallbackFeedURL(for channelId: String) -> URL {
         // swiftlint:disable:next force_unwrap
-        return URL(string: "https://www.youtube.com/feeds/videos.xml?channel_id=\(channelId)")!
+        URL(string: "https://www.youtube.com/feeds/videos.xml?channel_id=\(channelId)")!
     }
 
     // MARK: - Shorts feed URLs

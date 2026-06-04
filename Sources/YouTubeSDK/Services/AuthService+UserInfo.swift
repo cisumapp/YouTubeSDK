@@ -1,8 +1,6 @@
 import Foundation
 
-
 extension InternalAuthService {
-
     // MARK: - User info
 
     func fetchUserInfo() async throws {
@@ -23,13 +21,13 @@ extension InternalAuthService {
                     "gl": "US",
                     "clientName": InnerTubeClients.TV.name,
                     "clientVersion": InnerTubeClients.TV.version,
-                ]
+                ],
             ],
             "accountReadMask": [
                 "returnOwner": true,
                 "returnBrandAccounts": true,
-                "returnPersonaAccounts": false
-            ]
+                "returnPersonaAccounts": false,
+            ],
         ]
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: req)
@@ -51,11 +49,12 @@ extension InternalAuthService {
             accountName = (nameDict["runs"] as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined()
                 ?? nameDict["simpleText"] as? String
         }
-        authLog.notice("fetchUserInfo() — accountName=\(self.accountName ?? "nil")")
+        authLog.notice("fetchUserInfo() — accountName=\(accountName ?? "nil")")
         if let photoDict = item["accountPhoto"] as? [String: Any],
            let thumbnails = photoDict["thumbnails"] as? [[String: Any]],
            let last = thumbnails.last,
-           let urlStr = last["url"] as? String {
+           let urlStr = last["url"] as? String
+        {
             accountAvatarURL = URL(string: urlStr.hasPrefix("//") ? "https:\(urlStr)" : urlStr)
             authLog.notice("fetchUserInfo() — avatarURL=\(urlStr)")
         }

@@ -8,7 +8,6 @@
 import Foundation
 
 public struct InnerTubeContext: Sendable {
-
     private let client: ClientConfig
     public let cookies: String?
     public let accessToken: String?
@@ -45,14 +44,14 @@ public struct InnerTubeContext: Sendable {
             "User-Agent": client.userAgent,
             "Content-Type": "application/json",
             "X-YouTube-Client-Name": client.clientNameID,
-            "X-YouTube-Client-Version": client.version
+            "X-YouTube-Client-Version": client.version,
         ]
 
-        if let cookies = cookies, !cookies.isEmpty, (client.name == "TVHTML5" || client.name.contains("WEB")) {
+        if let cookies, !cookies.isEmpty, client.name == "TVHTML5" || client.name.contains("WEB") {
             defaultHeaders["Cookie"] = cookies
         }
 
-        if let accessToken = accessToken, !accessToken.isEmpty, client.name == "TVHTML5" {
+        if let accessToken, !accessToken.isEmpty, client.name == "TVHTML5" {
             defaultHeaders["Authorization"] = "Bearer \(accessToken)"
         }
 

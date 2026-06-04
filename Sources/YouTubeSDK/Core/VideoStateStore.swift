@@ -1,6 +1,7 @@
 import Foundation
 
 // MARK: - InternalVideoStateStore
+
 //
 // Persists per-video watch position and progress fraction across sessions.
 // Mirrors Android's InternalVideoStateService + InternalVideoStateController.
@@ -8,7 +9,6 @@ import Foundation
 // Thread-safe: implemented as a Swift actor.
 
 public actor InternalVideoStateStore: UserDefaultsBackedStore {
-
     // MARK: - State
 
     public struct State: Codable, Sendable {
@@ -33,14 +33,14 @@ public actor InternalVideoStateStore: UserDefaultsBackedStore {
     // MARK: - Private
 
     static let defaultsKey = "st_video_states"
-    private static let maxEntries = 1_000
+    private static let maxEntries = 1000
 
     private var states: [String: State] = [:]
     let defaults: UserDefaults
 
     private init() {
         self.defaults = .standard
-        if let loaded = Self.loadFrom(.standard) { states = loaded }
+        if let loaded = Self.loadFrom(.standard) { self.states = loaded }
     }
 
     /// Designated initializer for unit testing. Pass a unique `suiteName` string
@@ -49,7 +49,7 @@ public actor InternalVideoStateStore: UserDefaultsBackedStore {
     /// actor isolation boundaries cleanly in Swift 6 strict concurrency.
     init(suiteName: String) {
         self.defaults = UserDefaults(suiteName: suiteName) ?? .standard
-        if let loaded = Self.loadFrom(self.defaults) { states = loaded }
+        if let loaded = Self.loadFrom(defaults) { self.states = loaded }
     }
 
     // MARK: - Public API
@@ -80,8 +80,13 @@ public actor InternalVideoStateStore: UserDefaultsBackedStore {
 
     // MARK: - UserDefaultsBackedStore
 
-    func encodedValue() -> [String: State] { states }
-    func decodeValue(_ decoded: [String: State]) { states = decoded }
+    func encodedValue() -> [String: State] {
+        states
+    }
+
+    func decodeValue(_ decoded: [String: State]) {
+        states = decoded
+    }
 
     func afterPersist() {
         let value = states

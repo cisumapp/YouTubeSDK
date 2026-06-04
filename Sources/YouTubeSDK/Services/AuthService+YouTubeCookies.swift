@@ -2,6 +2,7 @@ import Foundation
 import os
 
 // MARK: - YouTube Web Session Cookie Exchange
+
 //
 // Converts our OAuth2 access token into a YouTube.com SAPISID cookie so that
 // WEB_CREATOR player requests can use SAPISIDHASH Authorization (the only auth
@@ -20,7 +21,6 @@ import os
 // unauthenticated WEB_CREATOR or a different client).
 
 extension InternalAuthService {
-
     /// Exchanges the current OAuth2 access token for a YouTube.com SAPISID cookie.
     /// On success, sets `self.sapisid` to the extracted value.
     /// All errors are caught internally; this method never throws.
@@ -41,12 +41,14 @@ extension InternalAuthService {
         // Diagnostic + gaiaId extraction: tokeninfo returns `sub` (numeric Gaia ID) when `openid`
         // scope is present. Required for the MultiBearer Multilogin request format.
         if let infoURL = URL(string: "https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=\(token)"),
-           let (infoData, _) = try? await URLSession.shared.data(from: infoURL) {
+           let (infoData, _) = try? await URLSession.shared.data(from: infoURL)
+        {
             let infoStr = String(data: infoData, encoding: .utf8) ?? "<non-UTF8>"
             authLog.notice("[cookies] tokeninfo=\(infoStr)")
             // Extract gaiaId from `sub` claim (only present when openid scope is in token)
             if let infoJSON = try? JSONSerialization.jsonObject(with: infoData) as? [String: Any],
-               let sub = infoJSON["sub"] as? String, !sub.isEmpty {
+               let sub = infoJSON["sub"] as? String, !sub.isEmpty
+            {
                 gaiaId = sub
                 authLog.notice("[cookies] gaiaId=\(sub) — MultiBearer Multilogin enabled")
             } else {
@@ -71,9 +73,10 @@ extension InternalAuthService {
         }
 
         guard let http1 = response1 as? HTTPURLResponse,
-              (300..<400).contains(http1.statusCode),
+              (300 ..< 400).contains(http1.statusCode),
               let location = http1.value(forHTTPHeaderField: "Location"),
-              let mergeURL = URL(string: location) else {
+              let mergeURL = URL(string: location)
+        else {
             let code = (response1 as? HTTPURLResponse)?.statusCode ?? 0
             let wwwAuth = (response1 as? HTTPURLResponse)?.value(forHTTPHeaderField: "WWW-Authenticate") ?? "none"
             authLog.notice("[cookies] OAuthLogin did not redirect (HTTP \(code)) WWW-Authenticate=\(wwwAuth) — trying Multilogin fallback")
@@ -86,7 +89,7 @@ extension InternalAuthService {
         // Step 2 — load MergeSession URL via shared session (sets SAPISID cookie)
         // URLSession.shared uses HTTPCookieStorage.shared and follows redirects by default.
         do {
-            let (_, _) = try await URLSession.shared.data(from: mergeURL)
+            _ = try await URLSession.shared.data(from: mergeURL)
         } catch {
             authLog.notice("[cookies] MergeSession request failed: \(error.localizedDescription)")
             return
@@ -133,7 +136,7 @@ extension InternalAuthService {
             authLog.notice("[cookies] Multilogin fallback Bearer (no gaiaId — openid scope missing)")
         }
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
-        request.httpBody = " ".data(using: .utf8)  // Space forces POST (Chromium pattern)
+        request.httpBody = " ".data(using: .utf8) // Space forces POST (Chromium pattern)
 
         let data: Data
         let response: URLResponse
@@ -161,7 +164,8 @@ extension InternalAuthService {
               (json["status"] as? String) == "OK",
               let cookies = json["cookies"] as? [[String: Any]],
               let entry = cookies.first(where: { $0["name"] as? String == "SAPISID" }),
-              let value = entry["value"] as? String, !value.isEmpty else {
+              let value = entry["value"] as? String, !value.isEmpty
+        else {
             authLog.notice("[cookies] Multilogin response missing SAPISID — unavailable")
             return
         }
@@ -177,14 +181,13 @@ extension InternalAuthService {
 /// URLSession task delegate that prevents automatic redirect following.
 /// Used for the OAuthLogin step where we need the 302 Location header.
 private final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-
     static let shared = NoRedirectDelegate()
 
     func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        willPerformHTTPRedirection response: HTTPURLResponse,
-        newRequest request: URLRequest,
+        _: URLSession,
+        task _: URLSessionTask,
+        willPerformHTTPRedirection _: HTTPURLResponse,
+        newRequest _: URLRequest,
         completionHandler: @escaping @Sendable (URLRequest?) -> Void
     ) {
         // Pass nil to prevent the redirect — the 302 response is returned as-is.

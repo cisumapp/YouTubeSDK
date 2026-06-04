@@ -14,7 +14,6 @@ import Foundation
 /// - Capacity: 30 entries — matches `InternalVideoPreloadCache` LRU limit; eviction is
 ///   oldest-first by `fetchedAt` date.
 public struct HLSManifestCache {
-
     // MARK: - Shared instance
 
     /// The shared singleton. Access is compiler-enforced to `@MainActor` at every call site.
@@ -45,7 +44,8 @@ public struct HLSManifestCache {
     /// Stores variant URLs for `videoId`. Evicts the oldest entry when at capacity.
     public mutating func store(_ variants: [Int: URL], for videoId: String) {
         if store.count >= Self.maxEntries,
-           let oldest = store.min(by: { $0.value.fetchedAt < $1.value.fetchedAt }) {
+           let oldest = store.min(by: { $0.value.fetchedAt < $1.value.fetchedAt })
+        {
             store.removeValue(forKey: oldest.key)
         }
         store[videoId] = (variants, Date())

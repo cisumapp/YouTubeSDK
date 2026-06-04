@@ -3,7 +3,7 @@ import Testing
 
 struct YouTubeChartsTests {
     @Test("Connect to YouTube Charts")
-    func testChartsConnection() async throws {
+    func chartsConnection() async throws {
         let client = YouTubeChartsClient()
         let songs = try await client.getTopSongs()
         let artists = try await client.getTopArtists()

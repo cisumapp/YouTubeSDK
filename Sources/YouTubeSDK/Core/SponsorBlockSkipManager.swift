@@ -24,11 +24,10 @@ public protocol SponsorBlockDelegate: AnyObject {
 @MainActor
 @Observable
 public final class SponsorBlockSkipManager {
-
     // MARK: - State
 
     public var sponsorSegments: [SponsorSegment] = []
-    public var currentToastSegment: SponsorSegment? = nil
+    public var currentToastSegment: SponsorSegment?
     /// True while a SponsorBlock auto-skip seek is in-flight. Guards against the
     /// periodic time observer re-triggering before the seek completes.
     public private(set) var isSkippingSegment: Bool = false
@@ -67,7 +66,7 @@ public final class SponsorBlockSkipManager {
                 guard !isSkippingSegment else { return true }
                 currentToastSegment = nil
                 let effectiveDuration = player?.currentItem?.duration.seconds ?? delegate.duration
-                if effectiveDuration > 0 && seg.end >= effectiveDuration - 2.0 {
+                if effectiveDuration > 0, seg.end >= effectiveDuration - 2.0 {
                     delegate.handlePlaybackEnd()
                     return true
                 }
@@ -82,7 +81,7 @@ public final class SponsorBlockSkipManager {
                         guard let self else { return }
                         if finished { self.delegate?.snapCurrentTime(to: seg.end) }
                         try? await Task.sleep(nanoseconds: 200_000_000)
-                        self.isSkippingSegment = false
+                        isSkippingSegment = false
                     }
                 }
                 return true
@@ -104,7 +103,7 @@ public final class SponsorBlockSkipManager {
         guard let seg = currentToastSegment else { return }
         currentToastSegment = nil
         let effectiveDuration = player?.currentItem?.duration.seconds ?? delegate?.duration ?? 0
-        if effectiveDuration > 0 && seg.end >= effectiveDuration - 2.0 {
+        if effectiveDuration > 0, seg.end >= effectiveDuration - 2.0 {
             delegate?.handlePlaybackEnd()
             return
         }

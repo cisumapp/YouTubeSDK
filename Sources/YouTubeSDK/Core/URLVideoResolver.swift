@@ -15,7 +15,6 @@ private let resolverLog = Logger(subsystem: "com.void.smarttube", category: "URL
 /// `URLInternalVideoResolver` is an actor so its `URLSession` and state are isolated from
 /// the calling context without additional synchronisation.
 public actor URLInternalVideoResolver {
-
     // MARK: - Configuration
 
     /// Maximum number of 3xx redirect hops to follow before giving up.
@@ -28,7 +27,7 @@ public actor URLInternalVideoResolver {
     public static let totalTimeout: TimeInterval = 12
 
     /// Maximum number of bytes read from a page during HTML scraping.
-    public static let maxBodyBytes = 256 * 1024  // 256 KB
+    public static let maxBodyBytes = 256 * 1024 // 256 KB
 
     // MARK: - Private state
 
@@ -39,12 +38,12 @@ public actor URLInternalVideoResolver {
     public init() {
         // Manual redirect handling so we can inspect each Location hop.
         let config = URLSessionConfiguration.ephemeral
-        config.httpShouldSetCookies       = false
-        config.httpCookieAcceptPolicy     = .never
-        config.timeoutIntervalForRequest  = URLInternalVideoResolver.hopTimeout
+        config.httpShouldSetCookies = false
+        config.httpCookieAcceptPolicy = .never
+        config.timeoutIntervalForRequest = URLInternalVideoResolver.hopTimeout
         config.timeoutIntervalForResource = URLInternalVideoResolver.totalTimeout
         // No cookies, no credentials forwarded to arbitrary third-party hosts.
-        session = URLSession(configuration: config, delegate: RedirectBlockingDelegate(), delegateQueue: nil)
+        self.session = URLSession(configuration: config, delegate: RedirectBlockingDelegate(), delegateQueue: nil)
     }
 
     // MARK: - Public API
@@ -148,7 +147,7 @@ public actor URLInternalVideoResolver {
         // Cap at maxBodyBytes to prevent memory blowout.
         let capped = data.prefix(URLInternalVideoResolver.maxBodyBytes)
         guard let html = String(data: capped, encoding: .utf8)
-                      ?? String(data: capped, encoding: .isoLatin1)
+            ?? String(data: capped, encoding: .isoLatin1)
         else { return nil }
 
         guard let found = HTMLInternalVideoLinkExtractor.extractURL(from: html) else { return nil }
@@ -169,10 +168,10 @@ public actor URLInternalVideoResolver {
 /// each `Location` hop in `followRedirects(from:)`.
 private final class RedirectBlockingDelegate: NSObject, URLSessionTaskDelegate, Sendable {
     func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        willPerformHTTPRedirection response: HTTPURLResponse,
-        newRequest request: URLRequest,
+        _: URLSession,
+        task _: URLSessionTask,
+        willPerformHTTPRedirection _: HTTPURLResponse,
+        newRequest _: URLRequest,
         completionHandler: @escaping @Sendable (URLRequest?) -> Void
     ) {
         // Pass nil to block automatic redirect — we handle it manually.

@@ -1,12 +1,15 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 extension InternalAuthService {
     // MARK: - User info
 
     func fetchUserInfo() async throws {
-        authLog.notice("fetchUserInfo() — calling validAccessToken()")
+        YouTubeLog.info("fetchUserInfo() — calling validAccessToken()")
         let token = try await validAccessToken()
-        authLog.notice("fetchUserInfo() — token len=\(token.count), calling InnerTube accounts_list API")
+        YouTubeLog.info("fetchUserInfo() — token len=\(token.count), calling InnerTube accounts_list API")
         // Android methodology: POST to www.youtube.com/youtubei/v1/account/accounts_list
         // with TV client context + accountReadMask. Mirrors AuthApi.java @POST accounts_list
         // and AuthApiHelper.getAccountsListQuery() which uses PostDataHelper.createQueryTV().
@@ -32,31 +35,31 @@ extension InternalAuthService {
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
         let (data, response) = try await URLSession.shared.data(for: req)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-        authLog.notice("fetchUserInfo() — HTTP \(statusCode)")
+        YouTubeLog.info("fetchUserInfo() — HTTP \(statusCode)")
         if let bodyStr = String(data: data, encoding: .utf8) {
-            authLog.notice("fetchUserInfo() — response: \(String(bodyStr.prefix(600)))")
+            YouTubeLog.info("fetchUserInfo() — response: \(String(bodyStr.prefix(600)))")
         }
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            authLog.error("fetchUserInfo() — JSON parse failed")
+            YouTubeLog.error("fetchUserInfo() — JSON parse failed")
             return
         }
         let accountItem = extractAccountItem(from: json)
         guard let item = accountItem else {
-            authLog.error("fetchUserInfo() — could not find accountItem; top-level keys=\(Array(json.keys))")
+            YouTubeLog.error("fetchUserInfo() — could not find accountItem; top-level keys=\(Array(json.keys))")
             return
         }
         if let nameDict = item["accountName"] as? [String: Any] {
             accountName = (nameDict["runs"] as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined()
                 ?? nameDict["simpleText"] as? String
         }
-        authLog.notice("fetchUserInfo() — accountName=\(accountName ?? "nil")")
+        YouTubeLog.info("fetchUserInfo() — accountName=\(accountName ?? "nil")")
         if let photoDict = item["accountPhoto"] as? [String: Any],
            let thumbnails = photoDict["thumbnails"] as? [[String: Any]],
            let last = thumbnails.last,
            let urlStr = last["url"] as? String
         {
             accountAvatarURL = URL(string: urlStr.hasPrefix("//") ? "https:\(urlStr)" : urlStr)
-            authLog.notice("fetchUserInfo() — avatarURL=\(urlStr)")
+            YouTubeLog.info("fetchUserInfo() — avatarURL=\(urlStr)")
         }
         saveToKeychain()
     }

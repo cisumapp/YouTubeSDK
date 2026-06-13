@@ -1,11 +1,16 @@
 import Foundation
+#if canImport(Observation)
+import Observation
+#endif
 
 // MARK: - CaptionsManager
 
 /// Owns caption state: `availableCaptions`, `selectedCaption`, `currentCaptionCue`,
 /// `captionCues`, and `captionFetchTask`. Fully self-contained — no delegate needed.
 @MainActor
+#if canImport(Observation)
 @Observable
+#endif
 public final class CaptionsManager {
     // MARK: - State
 
@@ -14,8 +19,13 @@ public final class CaptionsManager {
     public var currentCaptionCue: CaptionCue?
 
     // Not observed (task handle, not UI state)
+#if canImport(Observation)
     @ObservationIgnored public var captionCues: [CaptionCue] = []
     @ObservationIgnored public var captionFetchTask: Task<Void, Never>? = nil
+#else
+    public var captionCues: [CaptionCue] = []
+    public var captionFetchTask: Task<Void, Never>? = nil
+#endif
 
     // MARK: - Init
 

@@ -45,13 +45,13 @@ extension YouTubeClient {
                 let body = ["continuation": candidate]
                 do {
                     if attempt == 1 {
-                        print("yt_fetch_continuation token_candidates=\(tokenCandidates.map(\.count)) endpoints=\(endpointCandidates)")
+                        YouTubeLog.debug("yt_fetch_continuation token_candidates=\(tokenCandidates.map(\.count)) endpoints=\(endpointCandidates)")
                     }
 
-                    print("yt_fetch_continuation try attempt=\(attempt) endpoint=\(endpoint) tokenLen=\(candidate.count) tokenHasPercent=\(candidate.contains("%"))")
+                    YouTubeLog.debug("yt_fetch_continuation try attempt=\(attempt) endpoint=\(endpoint) tokenLen=\(candidate.count) tokenHasPercent=\(candidate.contains("%"))")
                     let data = try await webSearchNetwork.get(endpoint, body: body)
 //                let diagnostics = diagnoseSearchResponse(from: data)
-//                    print("yt_fetch_continuation client=WEB attempt=\(attempt) endpoint=\(endpoint) \(diagnostics.summary)")
+//                    YouTubeLog.debug("yt_fetch_continuation client=WEB attempt=\(attempt) endpoint=\(endpoint) \(diagnostics.summary)")
 //                    writeSearchDebugDump(data, clientName: "web_continuation_\(endpoint)")
                     var continuation = parseContinuationResults(from: data)
                     if musicOnly {
@@ -61,7 +61,7 @@ extension YouTubeClient {
                 } catch {
                     lastError = error
                     let ns = error as NSError
-                    print("yt_fetch_continuation error client=WEB attempt=\(attempt) endpoint=\(endpoint) code=\(ns.code) domain=\(ns.domain) body=\(body)")
+                    YouTubeLog.debug("yt_fetch_continuation error client=WEB attempt=\(attempt) endpoint=\(endpoint) code=\(ns.code) domain=\(ns.domain) body=\(body)")
 
                     // Lightweight backoff between candidate attempts.
                     try? await Task.sleep(for: .milliseconds(250))

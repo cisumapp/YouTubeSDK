@@ -6,7 +6,9 @@
 //
 
 import Foundation
+#if canImport(Security)
 import Security
+#endif
 
 public enum Keychain {
     /// A namespace for your app so keys don't collide with other apps
@@ -17,6 +19,7 @@ public enum Keychain {
     ///   - value: The string to save (e.g., the cookie string).
     ///   - key: A unique identifier (e.g., "youtube_cookies").
     public static func save(_ value: String, key: String) {
+#if canImport(Security)
         guard let data = value.data(using: .utf8) else { return }
 
         // 1. Create a query to identify the item
@@ -34,12 +37,16 @@ public enum Keychain {
         let status = SecItemAdd(query as CFDictionary, nil)
 
         if status != errSecSuccess {
-            print("⚠️ Keychain Save Error: \(status)")
+            YouTubeLog.debug(" Keychain Save Error: \(status)")
         }
+#else
+        UserDefaults.standard.set(value, forKey: "\(serviceName).\(key)")
+#endif
     }
 
     /// Retrieves a string from the Keychain.
     public static func load(key: String) -> String? {
+#if canImport(Security)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -57,10 +64,14 @@ public enum Keychain {
             }
         }
         return nil
+#else
+        return UserDefaults.standard.string(forKey: "\(serviceName).\(key)")
+#endif
     }
 
     /// Deletes an item from the Keychain.
     public static func delete(key: String) {
+#if canImport(Security)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: serviceName,
@@ -68,5 +79,8 @@ public enum Keychain {
         ]
 
         SecItemDelete(query as CFDictionary)
+#else
+        UserDefaults.standard.removeObject(forKey: "\(serviceName).\(key)")
+#endif
     }
 }

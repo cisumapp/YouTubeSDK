@@ -69,7 +69,7 @@ public actor YouTubeOAuthClient {
                     OAuthTokenStorage.save(newToken)
                     return newToken.accessToken
                 } catch {
-                    print("[YouTubeSDK] Token refresh failed: \(error.localizedDescription)")
+                    YouTubeLog.debug("[YouTubeSDK] Token refresh failed: \(error.localizedDescription)")
                     return nil
                 }
             } else {
@@ -133,7 +133,7 @@ public actor YouTubeOAuthClient {
                 return true
             }
         } catch {
-            print("[YouTubeSDK] Cookie auth validation failed: \(error)")
+            YouTubeLog.debug("[YouTubeSDK] Cookie auth validation failed: \(error)")
         }
         return false
     }

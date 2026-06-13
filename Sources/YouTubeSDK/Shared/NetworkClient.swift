@@ -6,6 +6,9 @@
 //
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// The simplified networking engine.
 /// It takes the Context we built and sends it to the URLs we defined.
@@ -118,7 +121,7 @@ public actor NetworkClient {
         }
 
         let url = try makeEndpointURL(endpoint, additionalQueryItems: queryItems)
-        YouTubeDebugLogger.log("Sending request to \(url.path) (visitorDataInjected=\(visitorData != nil))")
+        YouTubeLog.debug("Sending request to \(url.path) (visitorDataInjected=\(visitorData != nil))")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -145,25 +148,25 @@ public actor NetworkClient {
         let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            YouTubeDebugLogger.log("Request to \(url.path) failed: No HTTP response")
+            YouTubeLog.debug("Request to \(url.path) failed: No HTTP response")
             throw URLError(.badServerResponse)
         }
 
         if httpResponse.statusCode != 200 {
-            YouTubeDebugLogger.log("Request to \(url.path) failed with status \(httpResponse.statusCode)")
+            YouTubeLog.debug("Request to \(url.path) failed with status \(httpResponse.statusCode)")
             if let requestBody = request.httpBody,
                let requestBodyString = String(data: requestBody, encoding: .utf8)
             {
-                print("❌ YouTube Request URL: \(url.absoluteString)")
-                print("❌ YouTube Request Body: \(requestBodyString)")
+                YouTubeLog.debug(" YouTube Request URL: \(url.absoluteString)")
+                YouTubeLog.debug(" YouTube Request Body: \(requestBodyString)")
             }
             if let errorString = String(data: data, encoding: .utf8) {
-                print("❌ YouTube Error (\(httpResponse.statusCode)): \(errorString)")
+                YouTubeLog.debug(" YouTube Error (\(httpResponse.statusCode)): \(errorString)")
             }
             throw URLError(.badServerResponse)
         }
 
-        YouTubeDebugLogger.log("Request to \(url.path) succeeded (\(data.count) bytes)")
+        YouTubeLog.debug("Request to \(url.path) succeeded (\(data.count) bytes)")
         return data
     }
 
@@ -174,7 +177,7 @@ public actor NetworkClient {
         additionalHeaders: [String: String] = [:]
     ) async throws -> Data {
         let url = try makeEndpointURL(endpoint, additionalQueryItems: queryItems)
-        YouTubeDebugLogger.log("Sending request to \(url.path)")
+        YouTubeLog.debug("Sending request to \(url.path)")
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -204,25 +207,25 @@ public actor NetworkClient {
         let (data, response) = try await session.data(for: request)
 
         guard let httpResponse = response as? HTTPURLResponse else {
-            YouTubeDebugLogger.log("Request to \(url.path) failed: No HTTP response")
+            YouTubeLog.debug("Request to \(url.path) failed: No HTTP response")
             throw URLError(.badServerResponse)
         }
 
         if httpResponse.statusCode != 200 {
-            YouTubeDebugLogger.log("Request to \(url.path) failed with status \(httpResponse.statusCode)")
+            YouTubeLog.debug("Request to \(url.path) failed with status \(httpResponse.statusCode)")
             if let requestBody = request.httpBody,
                let requestBodyString = String(data: requestBody, encoding: .utf8)
             {
-                print("❌ YouTube Request URL: \(url.absoluteString)")
-                print("❌ YouTube Request Body: \(requestBodyString)")
+                YouTubeLog.debug(" YouTube Request URL: \(url.absoluteString)")
+                YouTubeLog.debug(" YouTube Request Body: \(requestBodyString)")
             }
             if let errorString = String(data: data, encoding: .utf8) {
-                print("❌ YouTube Error (\(httpResponse.statusCode)): \(errorString)")
+                YouTubeLog.debug(" YouTube Error (\(httpResponse.statusCode)): \(errorString)")
             }
             throw URLError(.badServerResponse)
         }
 
-        YouTubeDebugLogger.log("Request to \(url.path) succeeded (\(data.count) bytes)")
+        YouTubeLog.debug("Request to \(url.path) succeeded (\(data.count) bytes)")
         return data
     }
 

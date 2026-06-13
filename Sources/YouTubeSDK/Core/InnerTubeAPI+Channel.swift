@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(os)
 import os
+#endif
 
 private let tubeLog = Logger(subsystem: appSubsystem, category: "InnerTube")
 
@@ -10,15 +12,15 @@ extension InnerTubeAPI {
         // @handle strings are not valid browseIds — resolve to the real UC… channel ID first.
         let resolvedId: String
         if channelId.hasPrefix("@") {
-            tubeLog.notice("fetchChannel resolving handle \(channelId, privacy: .public)")
+            tubeLog.notice("fetchChannel resolving handle \(channelId)")
             resolvedId = try await resolveChannelHandle(channelId)
-            tubeLog.notice("fetchChannel resolved \(channelId, privacy: .public) → \(resolvedId, privacy: .public)")
+            tubeLog.notice("fetchChannel resolved \(channelId) → \(resolvedId)")
         } else {
             resolvedId = channelId
         }
         var body = makeBody(client: webClientContext)
         body["browseId"] = resolvedId
-        tubeLog.notice("fetchChannel browseId=\(resolvedId, privacy: .public)")
+        tubeLog.notice("fetchChannel browseId=\(resolvedId)")
         let data = try await post(endpoint: "browse", body: body)
         return try parseChannel(from: data, channelId: resolvedId)
     }
@@ -49,7 +51,7 @@ extension InnerTubeAPI {
             body["params"] = "EgZ2aWRlb3PyBgQKAjoA" // "InternalVideos" tab parameter
         }
         let videosParams = (body["params"] as? String) ?? "nil"
-        tubeLog.notice("fetchChannelInternalVideos browseId=\(channelId, privacy: .public) hasContinuation=\(continuationToken != nil, privacy: .public) params=\(videosParams, privacy: .public)")
+        tubeLog.notice("fetchChannelInternalVideos browseId=\(channelId) hasContinuation=\(continuationToken != nil) params=\(videosParams)")
         let data = try await post(endpoint: "browse", body: body)
         return try parseInternalVideoGroup(from: data, title: nil)
     }
@@ -62,7 +64,7 @@ extension InnerTubeAPI {
         let handleURL = "https://www.youtube.com/\(handle)"
         var body = makeBody(client: webClientContext)
         body["url"] = handleURL
-        tubeLog.notice("resolveChannelHandle url=\(handleURL, privacy: .public)")
+        tubeLog.notice("resolveChannelHandle url=\(handleURL)")
         let data = try await post(endpoint: "navigation/resolve_url", body: body)
         // Response shape: { "endpoint": { "browseEndpoint": { "browseId": "UCxxx" } } }
         let endpoint = data["endpoint"] as? [String: Any]
@@ -70,13 +72,13 @@ extension InnerTubeAPI {
             return browseId
         }
         let topKeys = data.keys.joined(separator: ", ")
-        tubeLog.error("resolveChannelHandle: unexpected response keys=[\(topKeys, privacy: .public)]")
+        tubeLog.error("resolveChannelHandle: unexpected response keys=[\(topKeys)]")
         throw APIError.decodingError("Could not resolve handle \(handle) to a channel ID")
     }
 
     private func parseChannel(from json: [String: Any], channelId: String) throws -> (Channel, InternalVideoGroup) {
         let headerDict = json["header"] as? [String: Any]
-        tubeLog.notice("parseChannel header keys=[\((headerDict?.keys.joined(separator: ",")) ?? "nil", privacy: .public)]")
+        tubeLog.notice("parseChannel header keys=[\((headerDict?.keys.joined(separator: ",")) ?? "nil")]")
         let header = headerDict?["c4TabbedHeaderRenderer"] as? [String: Any]
             ?? headerDict?["pageHeaderRenderer"] as? [String: Any]
         let title = header.flatMap { $0["title"] as? String }
@@ -90,7 +92,7 @@ extension InnerTubeAPI {
                 return nil
             }()
             ?? ""
-        tubeLog.notice("parseChannel header=\(header != nil ? "found" : "nil", privacy: .public) title='\(title, privacy: .public)'")
+        tubeLog.notice("parseChannel header=\(header != nil ? "found" : "nil") title='\(title)'")
         let description = header
             .flatMap { $0["description"] as? [String: Any] }
             .flatMap { extractText($0) }
@@ -155,11 +157,11 @@ extension InnerTubeAPI {
                     if !firstEntryDumped, let channelId, !channelId.isEmpty {
                         firstEntryDumped = true
                         let allKeys = entry.keys.sorted()
-                        tubeLog.notice("guideEntryRenderer (channel) keys: \(allKeys, privacy: .public)")
+                        tubeLog.notice("guideEntryRenderer (channel) keys: \(allKeys)")
                         if let data = try? JSONSerialization.data(withJSONObject: entry, options: [.sortedKeys]),
                            let str = String(data: data, encoding: .utf8)
                         {
-                            tubeLog.notice("guideEntryRenderer (channel) JSON: \(String(str.prefix(1500)), privacy: .public)")
+                            tubeLog.notice("guideEntryRenderer (channel) JSON: \(String(str.prefix(1500)))")
                         }
                     }
 
@@ -209,7 +211,7 @@ extension InnerTubeAPI {
         // Sort alphabetically so the list is stable and predictable regardless of
         // the order YouTube's guide API returns entries. Matches LocalSubscriptionStore.
         channels.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        tubeLog.notice("parseGuideChannels → \(channels.count, privacy: .public) channels, \(withThumbs, privacy: .public) with thumbnail")
+        tubeLog.notice("parseGuideChannels → \(channels.count) channels, \(withThumbs) with thumbnail")
         return channels
     }
 
@@ -291,7 +293,7 @@ extension InnerTubeAPI {
                     if let data = try? JSONSerialization.data(withJSONObject: lockup, options: [.sortedKeys]),
                        let str = String(data: data, encoding: .utf8)
                     {
-                        tubeLog.notice("avatarLockupRenderer (with nav) JSON: \(String(str.prefix(2000)), privacy: .public)")
+                        tubeLog.notice("avatarLockupRenderer (with nav) JSON: \(String(str.prefix(2000)))")
                     }
                 }
                 // Dump the first notificationMultiActionRenderer (these appear per-channel)
@@ -300,7 +302,7 @@ extension InnerTubeAPI {
                     if let data = try? JSONSerialization.data(withJSONObject: notif, options: [.sortedKeys]),
                        let str = String(data: data, encoding: .utf8)
                     {
-                        tubeLog.notice("notificationMultiActionRenderer JSON: \(String(str.prefix(2000)), privacy: .public)")
+                        tubeLog.notice("notificationMultiActionRenderer JSON: \(String(str.prefix(2000)))")
                     }
                 }
                 // TVHTML5 channel tile
@@ -332,7 +334,7 @@ extension InnerTubeAPI {
         walk(json)
         let withThumbs = channels.count(where: { $0.thumbnailURL != nil })
         let rendererSample = Array(encounteredRendererKeys.sorted().prefix(12))
-        tubeLog.notice("parseChannelRenderers → \(channels.count, privacy: .public) channels, \(withThumbs, privacy: .public) with thumbnail | renderer keys seen: \(rendererSample, privacy: .public)")
+        tubeLog.notice("parseChannelRenderers → \(channels.count) channels, \(withThumbs) with thumbnail | renderer keys seen: \(rendererSample)")
         return channels
     }
 
@@ -400,7 +402,7 @@ extension InnerTubeAPI {
                         if let data = try? JSONSerialization.data(withJSONObject: tile, options: [.sortedKeys]),
                            let str = String(data: data, encoding: .utf8)
                         {
-                            tubeLog.notice("parseSubscribedChannels first tileRenderer JSON: \(String(str.prefix(2000)), privacy: .public)")
+                            tubeLog.notice("parseSubscribedChannels first tileRenderer JSON: \(String(str.prefix(2000)))")
                         }
                     }
                     if let channel = channelFromTile(tile) {
@@ -423,7 +425,7 @@ extension InnerTubeAPI {
         walk(json)
         // Sort alphabetically so the channel list is stable. Matches LocalSubscriptionStore.
         channels.sort { $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending }
-        tubeLog.notice("parseSubscribedChannels → \(channels.count, privacy: .public) unique channels")
+        tubeLog.notice("parseSubscribedChannels → \(channels.count) unique channels")
         return channels
     }
 }

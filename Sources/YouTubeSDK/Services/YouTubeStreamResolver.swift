@@ -1,7 +1,9 @@
 import Foundation
+#if canImport(os)
 import os
+#endif
 
-private let resolverLog = Logger(subsystem: appSubsystem, category: "StreamResolver")
+private let PerfLog = Logger(subsystem: appSubsystem, category: "StreamResolver")
 
 /// A unified resolver that provides reliable playable URLs for YouTube videos.
 /// It orchestrates multiple strategies: InnerTube multi-client fallbacks,
@@ -32,13 +34,13 @@ public actor YouTubeStreamResolver {
     /// - Returns: A `PlayerInfo` containing the best playable stream.
     public func resolve(videoId: String, preferAudio: Bool = false, api: InnerTubeAPI? = nil) async throws -> PlayerInfo {
         let activeAPI = api ?? self.api
-        resolverLog.notice("--- Resolving \(videoId, privacy: .public) ---")
+        PerfLog.notice("--- Resolving \(videoId) ---")
 
         // Guard: WebView and InnerTube both require a real 11-char YouTube ID.
         // Spotify/provider IDs (e.g. "spotify-liked-songs::4") will always return
         // "Video unavailable" from YouTube; skip all strategies immediately.
         guard isValidYouTubeID(videoId) else {
-            resolverLog.error("❌ Invalid YouTube ID '\(videoId, privacy: .public)' — skipping all strategies")
+            PerfLog.error(" Invalid YouTube ID '\(videoId)' — skipping all strategies")
             throw APIError.unavailable("Not a valid YouTube video ID: \(videoId)")
         }
 
@@ -49,16 +51,16 @@ public actor YouTubeStreamResolver {
         // resolution flows and returns a format playable without HLS assembly.
         do {
             let start = Date()
-            resolverLog.notice("Trying unauthenticated Android client for \(videoId, privacy: .public)...")
+            PerfLog.notice("Trying unauthenticated Android client for \(videoId)...")
             let info = try await activeAPI.fetchPlayerInfoAndroid(videoId: videoId)
             let elapsed = Date().timeIntervalSince(start)
             if hasPlayableStream(info, preferAudio: preferAudio) {
-                resolverLog.notice("✅ Android fallback successful for \(videoId, privacy: .public) in \(String(format: "%.3f", elapsed))s")
+                PerfLog.notice(" Android fallback successful for \(videoId) in \(String(format: "%.3f", elapsed))s")
                 return info
             }
-            resolverLog.warning("⚠️ Android returned no playable streams for \(videoId, privacy: .public) in \(String(format: "%.3f", elapsed))s")
+            PerfLog.warning(" Android returned no playable streams for \(videoId) in \(String(format: "%.3f", elapsed))s")
         } catch {
-            resolverLog.error("❌ Android fallback failed: \(error.localizedDescription)")
+            PerfLog.error(" Android fallback failed: \(error.localizedDescription)")
         }
 
         // 2. Try the "Smart" exhaustive InnerTube chain.
@@ -68,12 +70,12 @@ public actor YouTubeStreamResolver {
             let info = try await activeAPI.fetchPlayerInfoSmart(videoId: videoId)
             let elapsed = Date().timeIntervalSince(start)
             if hasPlayableStream(info, preferAudio: preferAudio) {
-                resolverLog.notice("✅ InnerTube successful for \(videoId, privacy: .public) in \(String(format: "%.3f", elapsed))s")
+                PerfLog.notice(" InnerTube successful for \(videoId) in \(String(format: "%.3f", elapsed))s")
                 return info
             }
-            resolverLog.warning("⚠️ InnerTube returned no playable streams for \(videoId, privacy: .public) in \(String(format: "%.3f", elapsed))s")
+            PerfLog.warning(" InnerTube returned no playable streams for \(videoId) in \(String(format: "%.3f", elapsed))s")
         } catch {
-            resolverLog.error("❌ InnerTube failed for \(videoId, privacy: .public): \(error.localizedDescription)")
+            PerfLog.error(" InnerTube failed for \(videoId): \(error.localizedDescription)")
         }
 
         // 3. Try WebView HLS Extraction (High-fidelity, bypasses most bot detection).
@@ -81,13 +83,13 @@ public actor YouTubeStreamResolver {
         #if canImport(WebKit)
         do {
             let start = Date()
-            resolverLog.notice("Triggering WebView extraction for \(videoId, privacy: .public)...")
-            let hlsURL = try await YouTubeWebViewHLSExtractor.shared.extractHLSURL(videoId: videoId)
+            PerfLog.notice("Triggering WebView extraction for \(videoId)...")
+            let hlsURL = await YouTubeWebViewHLSExtractor.shared.extractHLSURL(videoId: videoId)
             let nMapping = await YouTubeWebViewHLSExtractor.shared.extractedNSolver
             let elapsed = Date().timeIntervalSince(start)
 
             if let hlsURL {
-                resolverLog.notice("✅ WebView extraction success for \(videoId, privacy: .public) in \(String(format: "%.3f", elapsed))s")
+                PerfLog.notice(" WebView extraction success for \(videoId) in \(String(format: "%.3f", elapsed))s")
 
                 // Re-fetch basic video metadata to return a complete PlayerInfo
                 let baseInfo = try? await activeAPI.fetchPlayerInfoTVEmbedded(videoId: videoId)
@@ -103,10 +105,10 @@ public actor YouTubeStreamResolver {
                     nSolver: nMapping
                 )
             }
-            resolverLog.warning("⚠️ WebView extraction returned nil for \(videoId, privacy: .public) in \(String(format: "%.3f", elapsed))s")
-        } catch {
-            resolverLog.error("❌ WebView extraction failed: \(error.localizedDescription)")
-        }
+            PerfLog.warning(" WebView extraction returned nil for \(videoId) in \(String(format: "%.3f", elapsed))s")
+        } // catch {
+//            PerfLog.error(" WebView extraction failed: \(error.localizedDescription)")
+//        }
         #endif
 
         throw APIError.unavailable("Streaming failed after trying all clients (InnerTube, Android, WebView).")

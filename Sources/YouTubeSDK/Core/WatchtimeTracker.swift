@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(os)
 import os
+#endif
 
 private let trackerLog = Logger(subsystem: appSubsystem, category: "WatchtimeTracker")
 
@@ -76,7 +78,7 @@ public final class WatchtimeTracker {
         trackingURLs = nil
         segmentStart = nil
 
-        trackerLog.notice("transition: \(oldInternalVideoId, privacy: .public) → \(newInternalVideoId, privacy: .public) cpn=\(newCPN.prefix(8), privacy: .public)…")
+        trackerLog.notice("transition: \(oldInternalVideoId) → \(newInternalVideoId) cpn=\(newCPN.prefix(8))…")
 
         return {
             guard !oldInternalVideoId.isEmpty, flushDuration > 0 else { return }
@@ -89,7 +91,7 @@ public final class WatchtimeTracker {
             // YouTube ignores zero-length watchtime segments (st == et), which would
             // prevent cmt from being recorded and leave the watch-progress bar stale.
             let segStart = oldSegStart ?? 0
-            trackerLog.notice("transition flush: videoId=\(oldInternalVideoId, privacy: .public) st=\(Int(segStart))s et=\(Int(flushPosition))s")
+            trackerLog.notice("transition flush: videoId=\(oldInternalVideoId) st=\(Int(segStart))s et=\(Int(flushPosition))s")
             await InternalVideoStateStore.shared.save(videoId: oldInternalVideoId, position: flushPosition, duration: flushDuration)
             await api.reportWatchtime(
                 videoId: oldInternalVideoId,
@@ -107,7 +109,7 @@ public final class WatchtimeTracker {
     /// Safe to call any time between `transition` and the first `checkpoint`.
     public func setTrackingURLs(_ urls: PlaybackTrackingURLs?) {
         trackingURLs = urls
-        trackerLog.notice("setTrackingURLs: \(urls != nil ? "account-bound" : "nil", privacy: .public)")
+        trackerLog.notice("setTrackingURLs: \(urls != nil ? "account-bound" : "nil")")
     }
 
     // MARK: - Checkpoint (suspend / stop)
@@ -130,12 +132,12 @@ public final class WatchtimeTracker {
             // segments (st == et), which would prevent cmt from being recorded and
             // leave the watch-progress bar stuck at a stale value.
             segmentStart = 0
-            trackerLog.notice("checkpoint (first): videoId=\(vid, privacy: .public) pos=\(Int(position))s — firing playbackStarted")
+            trackerLog.notice("checkpoint (first): videoId=\(vid) pos=\(Int(position))s — firing playbackStarted")
             await api.reportPlaybackStarted(videoId: vid, cpn: localCPN, trackingURLs: localURLs)
         }
 
         let segStart = segmentStart ?? 0
-        trackerLog.notice("checkpoint: videoId=\(vid, privacy: .public) st=\(Int(segStart))s et=\(Int(position))s dur=\(Int(duration))s")
+        trackerLog.notice("checkpoint: videoId=\(vid) st=\(Int(segStart))s et=\(Int(position))s dur=\(Int(duration))s")
         await InternalVideoStateStore.shared.save(videoId: vid, position: position, duration: duration)
         await api.reportWatchtime(
             videoId: vid,

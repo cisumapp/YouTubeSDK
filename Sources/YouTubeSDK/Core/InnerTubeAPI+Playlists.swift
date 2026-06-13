@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(os)
 import os
+#endif
 
 private let tubeLog = Logger(subsystem: appSubsystem, category: "InnerTube")
 
@@ -22,7 +24,7 @@ public extension InnerTubeAPI {
         // Log the second-level structure so it's easy to diagnose mismatches
         // if the live response shape differs from the mock.
         let contentsKeys = (data["contents"] as? [String: Any])?.keys.map(\.self) ?? []
-        tubeLog.notice("fetchUserPlaylists FElibrary contents keys: \(contentsKeys, privacy: .public)")
+        tubeLog.notice("fetchUserPlaylists FElibrary contents keys: \(contentsKeys)")
         var playlists = try parsePlaylists(from: data)
         // Watch Later (id "WL") is a special system playlist. On the TVHTML5 FElibrary
         // response it appears as a specialCollectionRenderer / video-item shelf rather
@@ -135,7 +137,7 @@ public extension InnerTubeAPI {
                 .flatMap { $0["thumbnail"] as? [String: Any] }
                 .flatMap { $0["thumbnails"] as? [[String: Any]] }
             let thumbURL = thumbSources?.last.flatMap { $0["url"] as? String }.flatMap { URL(string: $0) }
-            tubeLog.notice("specialCollectionRenderer id=\(id, privacy: .public) keys=\(renderer.keys.sorted().joined(separator: ","), privacy: .public) thumbURL=\(thumbURL?.absoluteString ?? "nil", privacy: .public)")
+            tubeLog.notice("specialCollectionRenderer id=\(id) keys=\(renderer.keys.sorted().joined(separator: ",")) thumbURL=\(thumbURL?.absoluteString ?? "nil")")
             let count: Int? =
                 (renderer["videoCountText"] as? [String: Any]).flatMap { extractText($0) }.flatMap { extractNumber($0) }
                     ?? (renderer["totalCountText"] as? [String: Any]).flatMap { extractText($0) }.flatMap { extractNumber($0) }
@@ -172,7 +174,7 @@ public extension InnerTubeAPI {
         }
 
         walk(json)
-        tubeLog.notice("parsePlaylists → \(playlists.count, privacy: .public) playlists")
+        tubeLog.notice("parsePlaylists → \(playlists.count) playlists")
         return playlists
     }
 }

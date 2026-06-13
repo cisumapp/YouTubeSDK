@@ -7,7 +7,12 @@
 #if canImport(WebKit)
 import AVFoundation
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(os)
 import os.log
+#endif
 
 private let proxyScheme = "ytwebhls"
 private let proxyLog = Logger(subsystem: "com.void.smarttube.app", category: "HLSProxy")

@@ -12,7 +12,7 @@ public extension YouTubeMusicClient {
         let nextData = try await network.get("next", body: ["videoId": videoId])
         guard let json = try? JSONSerialization.jsonObject(with: nextData) as? [String: Any] else { return nil }
 
-        let tabs = await findAll(key: "tabRenderer", in: json)
+        let tabs = findAll(key: "tabRenderer", in: json)
         guard let lyricsTab = tabs.first(where: { ($0 as? [String: Any])?["title"] as? String == "Lyrics" }) as? [String: Any],
               let endpoint = lyricsTab["endpoint"] as? [String: Any],
               let browseId = (endpoint["browseEndpoint"] as? [String: Any])?["browseId"] as? String
@@ -23,11 +23,10 @@ public extension YouTubeMusicClient {
         let lyricsData = try await network.get("browse", body: ["browseId": browseId])
         guard let lyricsJson = try? JSONSerialization.jsonObject(with: lyricsData) as? [String: Any] else { return nil }
 
-        let descriptions = await findAll(key: "musicDescriptionShelfRenderer", in: lyricsJson)
+        let descriptions = findAll(key: "musicDescriptionShelfRenderer", in: lyricsJson)
         if let shelf = descriptions.first as? [String: Any],
            let desc = shelf["description"] as? [String: Any],
-           let runs = desc["runs"] as? [[String: Any]]
-        {
+           let runs = desc["runs"] as? [[String: Any]] {
             return runs.compactMap { $0["text"] as? String }.joined()
         }
         return nil

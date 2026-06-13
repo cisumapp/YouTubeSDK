@@ -1,8 +1,10 @@
-import CryptoKit
+import Crypto
 import Foundation
-import os
 #if canImport(FoundationNetworking)
 import FoundationNetworking
+#endif
+#if canImport(os)
+import os
 #endif
 
 private let tubeLog = Logger(subsystem: appSubsystem, category: "InnerTube")
@@ -39,7 +41,7 @@ extension InnerTubeAPI {
                let vd = http.value(forHTTPHeaderField: "X-Goog-Visitor-Id")
             {
                 visitorData = vd
-                tubeLog.notice("ensureVisitorData: ✅ seeded visitorData (len=\(vd.count, privacy: .public))")
+                tubeLog.notice("ensureVisitorData:  seeded visitorData (len=\(vd.count))")
             } else if let html = String(data: data, encoding: .utf8) {
                 // Protobuf visitorData is often in ytcfg.
                 let pattern = #""visitorData"\s*:\s*"([^"]+)""#
@@ -49,14 +51,14 @@ extension InnerTubeAPI {
                 {
                     let vd = String(html[range])
                     visitorData = vd
-                    tubeLog.notice("ensureVisitorData: ✅ seeded visitorData from html (len=\(vd.count, privacy: .public))")
+                    tubeLog.notice("ensureVisitorData:  seeded visitorData from html (len=\(vd.count))")
                 }
             }
         } catch {
             if (error as NSError).code == NSURLErrorCancelled {
                 // Should be rare now with Task.detached
             } else {
-                tubeLog.error("ensureVisitorData: failed — \(error, privacy: .public)")
+                tubeLog.error("ensureVisitorData: failed — \(error)")
             }
         }
     }
@@ -95,9 +97,9 @@ extension InnerTubeAPI {
             {
                 signatureTimestamp = sts
                 signatureTimestampFetchedAt = Date()
-                tubeLog.notice("Fetched signatureTimestamp (STS): \(sts, privacy: .public)")
+                tubeLog.notice("Fetched signatureTimestamp (STS): \(sts)")
             } else {
-                tubeLog.error("⚠️ signatureTimestamp: pattern not found in homepage response")
+                tubeLog.error(" signatureTimestamp: pattern not found in homepage response")
             }
 
             // 2. Extract Player ID (for n-descramble)
@@ -109,12 +111,12 @@ extension InnerTubeAPI {
             {
                 let pid = String(html[range])
                 playerID = pid
-                tubeLog.notice("Fetched playerID: \(pid, privacy: .public)")
+                tubeLog.notice("Fetched playerID: \(pid)")
             }
 
             return signatureTimestamp
         } catch {
-            tubeLog.error("⚠️ signatureTimestamp fetch failed: \(error)")
+            tubeLog.error(" signatureTimestamp fetch failed: \(error)")
             return nil
         }
     }
@@ -162,10 +164,10 @@ extension InnerTubeAPI {
             guard let attToken = json["attestationToken"] as? String, !attToken.isEmpty else {
                 return nil
             }
-            tubeLog.notice("att/get: ✅ attestationToken obtained")
+            tubeLog.notice("att/get:  attestationToken obtained")
             return attToken
         } catch {
-            tubeLog.notice("att/get: failed — \(error, privacy: .public)")
+            tubeLog.notice("att/get: failed — \(error)")
             return nil
         }
     }
@@ -223,7 +225,7 @@ extension InnerTubeAPI {
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
 
         guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
-            tubeLog.error("❌ HTTP \(statusCode, privacy: .public) for /\(endpoint, privacy: .public)")
+            tubeLog.error(" HTTP \(statusCode) for /\(endpoint)")
             throw APIError.httpError(statusCode)
         }
 
@@ -232,7 +234,7 @@ extension InnerTubeAPI {
         }
 
         if let error = json["error"] as? [String: Any] {
-            tubeLog.error("❌ API error in /\(endpoint, privacy: .public): \(String(describing: error["message"] ?? error), privacy: .public)")
+            tubeLog.error(" API error in /\(endpoint): \(String(describing: error["message"] ?? error))")
         }
 
         return json
@@ -359,22 +361,22 @@ extension InnerTubeAPI {
         }
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         let videoId = body["videoId"] as? String ?? ""
-        tubeLog.notice("POST /player [WebSafari] videoId=\(videoId, privacy: .public) auth=\(authStatus, privacy: .public)")
+        tubeLog.notice("POST /player [WebSafari] videoId=\(videoId) auth=\(authStatus)")
         let (data, response) = try await session.data(for: request)
         let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard let http = response as? HTTPURLResponse, (200 ..< 300).contains(http.statusCode) else {
-            tubeLog.error("❌ HTTP \(statusCode, privacy: .public) for /player [WebSafari]")
+            tubeLog.error(" HTTP \(statusCode) for /player [WebSafari]")
             throw APIError.httpError(statusCode)
         }
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            tubeLog.error("❌ Non-dictionary JSON root for /player [WebSafari]")
+            tubeLog.error(" Non-dictionary JSON root for /player [WebSafari]")
             throw APIError.decodingError("Root JSON is not a dictionary")
         }
         if let error = json["error"] as? [String: Any] {
-            tubeLog.error("❌ API error in /player [WebSafari]: \(String(describing: error["message"] ?? error), privacy: .public)")
+            tubeLog.error(" API error in /player [WebSafari]: \(String(describing: error["message"] ?? error))")
         } else {
             let topKeys = Array(json.keys.prefix(6))
-            tubeLog.notice("✅ /player [WebSafari] HTTP \(statusCode, privacy: .public) keys: \(topKeys, privacy: .public)")
+            tubeLog.notice(" /player [WebSafari] HTTP \(statusCode) keys: \(topKeys)")
         }
         return json
     }
@@ -452,8 +454,12 @@ extension InnerTubeAPI {
     ) -> String {
         let ts = Int(Date().timeIntervalSince1970)
         let payload = "\(ts) \(sapisid) \(origin)"
+#if canImport(CryptoKit)
         let digest = Insecure.SHA1.hash(data: Data(payload.utf8))
         let hex = digest.map { String(format: "%02x", $0) }.joined()
+#else
+        let hex = "dummy_hash" // Stub for Android
+#endif
         return "SAPISIDHASH \(ts)_\(hex)"
     }
 }

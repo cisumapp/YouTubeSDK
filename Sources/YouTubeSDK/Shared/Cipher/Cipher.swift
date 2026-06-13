@@ -35,7 +35,7 @@
          // Approach 1: Try getting player ID from /iframe_api (YouTube.js approach)
          if let playerId = try? await getPlayerId(network: network) {
              path = "/s/player/\(playerId)/player_ias.vflset/en_US/base.js"
-             print("DECIPHER ENGINE: Got player ID from iframe_api: \(playerId)")
+             YouTubeLog.debug("DECIPHER ENGINE: Got player ID from iframe_api: \(playerId)")
          } else {
              // Approach 2: Scrape from watch page HTML
              let htmlData = try await network.fetchRawHTML("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
@@ -70,14 +70,14 @@
              if let fp = foundPath {
                  path = fp
              } else {
-                 print("DECIPHER ENGINE: WARNING - Failed to discover player script. Using fallback.")
+                 YouTubeLog.debug("DECIPHER ENGINE: WARNING - Failed to discover player script. Using fallback.")
                  path = "/s/player/2d01abf7/player_ias.vflset/en_US/base.js"
              }
          }
 
          let fullURL = path.hasPrefix("http") ? path : "https://www.youtube.com\(path)"
          self.cachedScriptURL = fullURL
-         print("DECIPHER ENGINE: Discovered player script at \(fullURL)")
+         YouTubeLog.debug("DECIPHER ENGINE: Discovered player script at \(fullURL)")
          return fullURL
      }
 
@@ -117,10 +117,10 @@
              if let cached = cachedScriptContent {
                  script = cached
              } else {
-                 print("DECIPHER ENGINE: Fetching script content from network...")
+                 YouTubeLog.debug("DECIPHER ENGINE: Fetching script content from network...")
                  let scriptData = try await network.fetchRawHTML(scriptURL)
                  guard let content = String(data: scriptData, encoding: .utf8) else {
-                     print("DECIPHER ENGINE: Failed to decode script content")
+                     YouTubeLog.debug("DECIPHER ENGINE: Failed to decode script content")
                      return
                  }
                  self.cachedScriptContent = content
@@ -131,7 +131,7 @@
              cachedSignatureTimestamp = extractSignatureTimestamp(from: script)
              isEngineReady = true
          } catch {
-             print("DECIPHER ENGINE: Failed to initialize engine: \(error)")
+             YouTubeLog.debug("DECIPHER ENGINE: Failed to initialize engine: \(error)")
          }
      }
 
@@ -144,14 +144,14 @@
          if let sig = cipherParams["s"] {
              let sp = cipherParams["sp"] ?? "signature"
              let decryptedSignature = engine.decipher(signature: sig)
-             print("DECIPHER FLOW: sig(\(sig.prefix(10))...) → (\(decryptedSignature.prefix(10))...) sp=\(sp)")
+             YouTubeLog.debug("DECIPHER FLOW: sig(\(sig.prefix(10))...) → (\(decryptedSignature.prefix(10))...) sp=\(sp)")
              var components = URLComponents(string: originalURLString)
              var queryItems = components?.queryItems ?? []
              queryItems.append(URLQueryItem(name: sp, value: decryptedSignature))
              components?.queryItems = queryItems
              return await decipherN(url: components?.url?.absoluteString ?? originalURLString, network: network)
          } else {
-             print("DECIPHER FLOW: no 's' in cipher, going straight to decipherN")
+             YouTubeLog.debug("DECIPHER FLOW: no 's' in cipher, going straight to decipherN")
              return await decipherN(url: originalURLString, network: network)
          }
      }
@@ -161,17 +161,17 @@
 
          var components = URLComponents(string: url)
          guard var queryItems = components?.queryItems else {
-             print("DECIPHER FLOW: nil components for url=\(url.prefix(60))")
+             YouTubeLog.debug("DECIPHER FLOW: nil components for url=\(url.prefix(60))")
              return components?.url
          }
 
          if let idx = queryItems.firstIndex(where: { $0.name == "n" }), let nVal = queryItems[idx].value {
              let decipheredN = engine.decipherN(nValue: nVal)
-             print("DECIPHER FLOW: n(\(nVal.prefix(10))...) → (\(decipheredN.prefix(10))...)")
+             YouTubeLog.debug("DECIPHER FLOW: n(\(nVal.prefix(10))...) → (\(decipheredN.prefix(10))...)")
              queryItems[idx].value = decipheredN
              components?.queryItems = queryItems
          } else {
-             print("DECIPHER FLOW: no 'n' param in URL")
+             YouTubeLog.debug("DECIPHER FLOW: no 'n' param in URL")
          }
 
          return components?.url
@@ -204,11 +204,11 @@
                 match.numberOfRanges > 1,
                 let range = Range(match.range(at: 1), in: playerScript) {
                  let val = Int(playerScript[range])
-                 if val != nil { print("DECIPHER ENGINE: signatureTimestamp = \(val!)") }
+                 if val != nil { YouTubeLog.debug("DECIPHER ENGINE: signatureTimestamp = \(val!)") }
                  return val
              }
          }
-         print("DECIPHER ENGINE: Could not extract signatureTimestamp")
+         YouTubeLog.debug("DECIPHER ENGINE: Could not extract signatureTimestamp")
          return nil
      }
  }

@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(os)
 import os
+#endif
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -44,16 +46,16 @@ public actor YouTubeClientCredentialsFetcher {
     /// Returns credentials, using the cache when available.
     public func credentials() async -> YouTubeClientCredentials {
         if let c = cached {
-            credLog.notice("Using cached credentials: \(c.clientId, privacy: .public)")
+            credLog.notice("Using cached credentials: \(c.clientId)")
             return c
         }
         credLog.notice("Fetching credentials from YouTube TV JS…")
         if let c = await fetchFromYouTube() {
-            credLog.notice("✅ Scraped → clientId: \(c.clientId, privacy: .public)")
+            credLog.notice(" Scraped → clientId: \(c.clientId)")
             cached = c
             return c
         }
-        credLog.notice("⚠️ Scrape failed — using fallback credentials")
+        credLog.notice(" Scrape failed — using fallback credentials")
         return Self.fallback
     }
 
@@ -78,10 +80,10 @@ public actor YouTubeClientCredentialsFetcher {
             forHTTPHeaderField: "User-Agent"
         )
         guard let html = await fetchText(request: request) else {
-            credLog.error("❌ Failed to fetch youtube.com/tv HTML")
+            credLog.error(" Failed to fetch youtube.com/tv HTML")
             return nil
         }
-        credLog.notice("Fetched youtube.com/tv (\(html.count, privacy: .public) chars), searching for base-js…")
+        credLog.notice("Fetched youtube.com/tv (\(html.count) chars), searching for base-js…")
 
         // Android AppInfo.java pattern: id="base-js" src="(path)"
         // The src is a /m=base kabuki URL, NOT a /base.js file path.
@@ -89,7 +91,7 @@ public actor YouTubeClientCredentialsFetcher {
         guard let match = html.range(of: pattern, options: .regularExpression),
               let srcRange = html[match].range(of: #"src="([^"]+)""#, options: .regularExpression)
         else {
-            credLog.error("❌ base-js src URL not found in HTML")
+            credLog.error(" base-js src URL not found in HTML")
             return nil
         }
         // Extract just the URL value from src="..."
@@ -98,10 +100,10 @@ public actor YouTubeClientCredentialsFetcher {
             .replacingOccurrences(of: "src=\"", with: "")
             .replacingOccurrences(of: "\"", with: "")
         guard let baseURL = URL(string: "https://www.youtube.com" + urlValue) else {
-            credLog.error("❌ Could not construct base-js URL from: \(urlValue, privacy: .public)")
+            credLog.error(" Could not construct base-js URL from: \(urlValue)")
             return nil
         }
-        credLog.notice("Found base-js URL: \(baseURL, privacy: .public)")
+        credLog.notice("Found base-js URL: \(baseURL)")
         return baseURL
     }
 
@@ -113,11 +115,11 @@ public actor YouTubeClientCredentialsFetcher {
         let clientSecPattern = #"clientId:"[-\w]+\.apps\.googleusercontent\.com",\n?[$\w]+:"(\w+)""#
 
         guard let clientId = firstCapture(in: js, pattern: clientIdPattern) else {
-            credLog.error("❌ clientId pattern not matched in base.js (\(js.count, privacy: .public) chars)")
+            credLog.error(" clientId pattern not matched in base.js (\(js.count) chars)")
             return nil
         }
         guard let secret = firstCapture(in: js, pattern: clientSecPattern) else {
-            credLog.error("❌ clientSecret pattern not matched (clientId was \(clientId, privacy: .public))")
+            credLog.error(" clientSecret pattern not matched (clientId was \(clientId))")
             return nil
         }
 
@@ -136,7 +138,7 @@ public actor YouTubeClientCredentialsFetcher {
               (200 ..< 300).contains(http.statusCode)
         else {
             let url = request.url?.absoluteString ?? "?"
-            credLog.error("❌ HTTP request failed: \(url, privacy: .public)")
+            credLog.error(" HTTP request failed: \(url)")
             return nil
         }
         return String(data: data, encoding: .utf8)

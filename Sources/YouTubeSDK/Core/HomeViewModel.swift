@@ -1,8 +1,9 @@
 import Foundation
 import Observation
+#if canImport(os)
 import os
+#endif
 
-private let homeLog = ViewModelLogger(category: "Home")
 
 // MARK: - HomeViewModel
 
@@ -70,7 +71,7 @@ public final class HomeViewModel {
             var seen = Set<String>()
             let deduped = recs.filter { seen.insert($0.id).inserted }
             if deduped.count != recs.count {
-                homeLog.notice("mergedInternalVideos: recs-only dedup removed \(recs.count - deduped.count) duplicate(s) (raw=\(recs.count))")
+                YouTubeLog.info("mergedInternalVideos: recs-only dedup removed \(recs.count - deduped.count) duplicate(s) (raw=\(recs.count))")
             }
             return deduped
         }
@@ -78,7 +79,7 @@ public final class HomeViewModel {
             var seen = Set<String>()
             let deduped = subs.filter { seen.insert($0.id).inserted }
             if deduped.count != subs.count {
-                homeLog.notice("mergedInternalVideos: subs-only dedup removed \(subs.count - deduped.count) duplicate(s) (raw=\(subs.count))")
+                YouTubeLog.info("mergedInternalVideos: subs-only dedup removed \(subs.count - deduped.count) duplicate(s) (raw=\(subs.count))")
             }
             return deduped
         }
@@ -107,7 +108,7 @@ public final class HomeViewModel {
         var seen = Set<String>()
         let deduped = result.filter { seen.insert($0.id).inserted }
         if deduped.count != result.count {
-            homeLog.notice("mergedInternalVideos: final dedup removed \(result.count - deduped.count) duplicate(s) (subs+recs raw=\(result.count))")
+            YouTubeLog.info("mergedInternalVideos: final dedup removed \(result.count - deduped.count) duplicate(s) (subs+recs raw=\(result.count))")
         }
         return deduped
     }
@@ -150,6 +151,7 @@ public final class HomeViewModel {
     // MARK: - Feed hide handling
 
     private func observeFeedHideNotifications() {
+#if canImport(Darwin)
         hideObserverTasks.append(Task { [weak self] in
             for await note in NotificationCenter.default.notifications(named: .hideInternalVideoFromFeed) {
                 guard let self, let videoId = note.userInfo?["videoId"] as? String else { continue }
@@ -162,6 +164,7 @@ public final class HomeViewModel {
                 removeChannel(id: channelId)
             }
         })
+#endif
     }
 
     public func removeInternalVideo(id: String) {
@@ -225,7 +228,7 @@ public final class HomeViewModel {
             loadedAt = Date()
             let merged = self.mergedInternalVideos
             let mergedShorts = merged.count(where: { $0.isShort })
-            homeLog.notice("load complete: merged=\(merged.count) regular=\(merged.count - mergedShorts) mergedShorts=\(mergedShorts) shortsSection=\(shortsInternalVideos.count)")
+            YouTubeLog.info("load complete: merged=\(merged.count) regular=\(merged.count - mergedShorts) mergedShorts=\(mergedShorts) shortsSection=\(shortsInternalVideos.count)")
         }
     }
 
@@ -248,7 +251,7 @@ public final class HomeViewModel {
         let age = loadedAt.map { Date().timeIntervalSince($0) } ?? .infinity
         guard age > threshold else { return }
         let ageDesc = age.isFinite ? "\(Int(age))s" : "never loaded"
-        homeLog.notice("refreshIfStale: age=\(ageDesc) — reloading shelves")
+        YouTubeLog.info("refreshIfStale: age=\(ageDesc) — reloading shelves")
         load()
     }
 
@@ -295,9 +298,9 @@ public final class HomeViewModel {
     /// grows on demand as the user scrolls past the already-loaded cards.
     public func loadNextShortsPage() {
         let subsToken = sections.first { $0.section.type == .subscriptions }?.nextPageToken
-        homeLog.notice("loadNextShortsPage: called — count=\(shortsInternalVideos.count) isLoading=\(isLoadingMoreShorts) searchToken=\(shortsNextPageToken != nil) subsToken=\(subsToken != nil)")
+        YouTubeLog.info("loadNextShortsPage: called — count=\(shortsInternalVideos.count) isLoading=\(isLoadingMoreShorts) searchToken=\(shortsNextPageToken != nil) subsToken=\(subsToken != nil)")
         guard !isLoadingMoreShorts, shortsNextPageToken != nil || subsToken != nil else {
-            homeLog.notice("loadNextShortsPage: skipped — no tokens available")
+            YouTubeLog.info("loadNextShortsPage: skipped — no tokens available")
             return
         }
         Task { @MainActor [weak self] in
@@ -312,20 +315,20 @@ public final class HomeViewModel {
         defer { isLoadingMoreShorts = false }
         // Phase 1: one search page (srch: token from fetchShorts).
         if let token = shortsNextPageToken {
-            homeLog.notice("loadNextShortsPage search: fetching token=\(String(token.prefix(16)))\u{2026}")
+            YouTubeLog.info("loadNextShortsPage search: fetching token=\(String(token.prefix(16)))\u{2026}")
             do {
                 let more = try await api.fetchShortsMore(continuationToken: token)
                 let existingIDs = Set(shortsInternalVideos.map(\.id))
                 let newInternalVideos = more.videos.filter { !existingIDs.contains($0.id) }
                 shortsInternalVideos.append(contentsOf: newInternalVideos)
                 shortsNextPageToken = more.nextPageToken
-                homeLog.notice("loadNextShortsPage search: added \(newInternalVideos.count) total=\(shortsInternalVideos.count) hasMore=\(more.nextPageToken != nil)")
+                YouTubeLog.info("loadNextShortsPage search: added \(newInternalVideos.count) total=\(shortsInternalVideos.count) hasMore=\(more.nextPageToken != nil)")
                 if !newInternalVideos.isEmpty {
                     return // yielded new Shorts; next scroll loads the next page
                 }
                 // Search page returned 0 new Shorts — fall through to Phase 2
             } catch {
-                homeLog.error("loadNextShortsPage search: failed: \(error.localizedDescription)")
+                YouTubeLog.error("loadNextShortsPage search: failed: \(error.localizedDescription)")
                 shortsNextPageToken = nil
             }
         }
@@ -334,18 +337,18 @@ public final class HomeViewModel {
         if let idx = sections.firstIndex(where: { $0.section.type == .subscriptions }),
            let token = sections[idx].nextPageToken
         {
-            homeLog.notice("loadNextShortsPage subs: fetching token=\(String(token.prefix(16)))\u{2026}")
+            YouTubeLog.info("loadNextShortsPage subs: fetching token=\(String(token.prefix(16)))\u{2026}")
             do {
-                let more = try await Self.fetchMoreInternalVideos(type: .subscriptions, token: token, api: api)
+                let more = await Self.fetchMoreInternalVideos(type: .subscriptions, token: token, api: api)
                 let existingIDs = Set(sections[idx].videos.map(\.id))
                 let newInternalVideos = more.0.filter { !existingIDs.contains($0.id) }
                 sections[idx].videos.append(contentsOf: newInternalVideos)
                 sections[idx].nextPageToken = more.1
                 let newShorts = newInternalVideos.count(where: { $0.isShort })
-                homeLog.notice("loadNextShortsPage subs: added \(newInternalVideos.count) (\(newShorts) shorts) hasMore=\(more.1 != nil)")
-            } catch {
-                homeLog.error("loadNextShortsPage subs: failed: \(error.localizedDescription)")
-            }
+                YouTubeLog.info("loadNextShortsPage subs: added \(newInternalVideos.count) (\(newShorts) shorts) hasMore=\(more.1 != nil)")
+            } // catch {
+//                YouTubeLog.error("loadNextShortsPage subs: failed: \(error.localizedDescription)")
+//            }
         }
     }
 
@@ -359,13 +362,13 @@ public final class HomeViewModel {
         let threshold = 6
         #endif
         guard !isLoadingMoreShorts else {
-            homeLog.notice("loadMoreShortsIfNeeded: skipped — already loading")
+            YouTubeLog.info("loadMoreShortsIfNeeded: skipped — already loading")
             return
         }
         guard shortsInternalVideos.count < threshold, shortsNextPageToken != nil else {
             // If search token is exhausted but subs has a continuation, Phase 2 of
             // loadNextShortsPage will cover it. Nothing to do here.
-            homeLog.notice("loadMoreShortsIfNeeded: skipped count=\(shortsInternalVideos.count) hasToken=\(shortsNextPageToken != nil) loading=\(isLoadingMoreShorts)")
+            YouTubeLog.info("loadMoreShortsIfNeeded: skipped count=\(shortsInternalVideos.count) hasToken=\(shortsNextPageToken != nil) loading=\(isLoadingMoreShorts)")
             return
         }
         isLoadingMoreShorts = true
@@ -374,20 +377,20 @@ public final class HomeViewModel {
         // Loop until we have at least `threshold` items or pages run out.
         while shortsInternalVideos.count < threshold, let token = shortsNextPageToken {
             loopIteration += 1
-            homeLog.notice("loadMoreShortsIfNeeded: loop=\(loopIteration) count=\(shortsInternalVideos.count) threshold=\(threshold) token=\(token.prefix(16))…")
+            YouTubeLog.info("loadMoreShortsIfNeeded: loop=\(loopIteration) count=\(shortsInternalVideos.count) threshold=\(threshold) token=\(token.prefix(16))…")
             do {
                 let more = try await api.fetchShortsMore(continuationToken: token)
                 let existingIDs = Set(shortsInternalVideos.map(\.id))
                 let newInternalVideos = more.videos.filter { !existingIDs.contains($0.id) }
                 shortsInternalVideos.append(contentsOf: newInternalVideos)
                 shortsNextPageToken = more.nextPageToken
-                homeLog.notice("loadMoreShortsIfNeeded: added \(newInternalVideos.count) total=\(shortsInternalVideos.count)")
+                YouTubeLog.info("loadMoreShortsIfNeeded: added \(newInternalVideos.count) total=\(shortsInternalVideos.count)")
                 if newInternalVideos.isEmpty {
                     // No new content on this page — avoid an infinite loop.
                     break
                 }
             } catch {
-                homeLog.error("loadMoreShortsIfNeeded: fetch failed: \(error.localizedDescription)")
+                YouTubeLog.error("loadMoreShortsIfNeeded: fetch failed: \(error.localizedDescription)")
                 break
             }
         }
@@ -401,10 +404,10 @@ public final class HomeViewModel {
         do {
             let group = try await api.fetchShorts()
             let hasToken = group.nextPageToken != nil
-            homeLog.notice("fetchShortsInternalVideos → \(group.videos.count) shorts hasToken=\(hasToken)")
+            YouTubeLog.info("fetchShortsInternalVideos → \(group.videos.count) shorts hasToken=\(hasToken)")
             return (group.videos, group.nextPageToken)
         } catch {
-            homeLog.error("fetchShortsInternalVideos failed: \(error.localizedDescription)")
+            YouTubeLog.error("fetchShortsInternalVideos failed: \(error.localizedDescription)")
             return ([], nil)
         }
     }
@@ -417,7 +420,7 @@ public final class HomeViewModel {
             case .subscriptions:
                 let group = try await api.fetchSubscriptions()
                 let shortsCount = group.videos.count(where: { $0.isShort })
-                homeLog.notice("fetchInternalVideos subs: total=\(group.videos.count) shorts=\(shortsCount) regular=\(group.videos.count - shortsCount)")
+                YouTubeLog.info("fetchInternalVideos subs: total=\(group.videos.count) shorts=\(shortsCount) regular=\(group.videos.count - shortsCount)")
                 return (Array(group.videos.prefix(InnerTubeClients.maxInternalVideoResults)), group.nextPageToken)
             case .home:
                 let rows = try await api.fetchHomeRows()
@@ -425,7 +428,7 @@ public final class HomeViewModel {
                 var seen = Set<String>()
                 let deduped = rows.flatMap(\.videos).filter { seen.insert($0.id).inserted }
                 let fetchedShortsCount = deduped.count(where: { $0.isShort })
-                homeLog.notice("fetchInternalVideos home: total=\(deduped.count) shorts=\(fetchedShortsCount) regular=\(deduped.count - fetchedShortsCount)")
+                YouTubeLog.info("fetchInternalVideos home: total=\(deduped.count) shorts=\(fetchedShortsCount) regular=\(deduped.count - fetchedShortsCount)")
                 if deduped.isEmpty {
                     // Home feed empty (no watch history / feedNudgeRenderer) — fall back to popular
                     let popular = try await api.search(query: "popular")
@@ -436,7 +439,7 @@ public final class HomeViewModel {
                 return ([], nil)
             }
         } catch {
-            homeLog.error("HomeViewModel fetch \(String(describing: type)): \(error.localizedDescription)")
+            YouTubeLog.error("HomeViewModel fetch \(String(describing: type)): \(error.localizedDescription)")
             return ([], nil)
         }
     }
@@ -449,7 +452,7 @@ public final class HomeViewModel {
                     try await api.fetchSubscriptions(continuationToken: token)
                 }
                 let shortsCount = group.videos.count(where: { $0.isShort })
-                homeLog.notice("fetchMoreInternalVideos subs: total=\(group.videos.count) shorts=\(shortsCount) regular=\(group.videos.count - shortsCount)")
+                YouTubeLog.info("fetchMoreInternalVideos subs: total=\(group.videos.count) shorts=\(shortsCount) regular=\(group.videos.count - shortsCount)")
                 return (group.videos, group.nextPageToken)
             case .home:
                 let rows = try await retryWithBackoff(label: "HomeVM.home") {
@@ -465,7 +468,7 @@ public final class HomeViewModel {
                 return ([], nil)
             }
         } catch {
-            homeLog.error("HomeViewModel loadMore \(String(describing: type)): \(error.localizedDescription)")
+            YouTubeLog.error("HomeViewModel loadMore \(String(describing: type)): \(error.localizedDescription)")
             return ([], nil)
         }
     }

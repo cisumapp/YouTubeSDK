@@ -23,10 +23,10 @@
          self.script = script
          let ctx = JSContext()!
          ctx.exceptionHandler = { _, exc in
-             if let e = exc { print("DECIPHER ENGINE: JS exception: \(e)") }
+             if let e = exc { YouTubeLog.debug("DECIPHER ENGINE: JS exception: \(e)") }
          }
          self.evalContext = ctx
-         print("DECIPHER ENGINE: Loading script of length \(script.count)...")
+         YouTubeLog.debug("DECIPHER ENGINE: Loading script of length \(script.count)...")
 
          // Strategy 1: Individual function extraction with dependency extraction
          sigFn = extractFunctionWithDeps(named: findSigFuncName())
@@ -34,15 +34,15 @@
 
          // If sigFn found but nFn is nil, the same function often handles both
          if sigFn != nil && nFn == nil {
-             print("DECIPHER ENGINE: Using sigFn for nFn (same function)")
+             YouTubeLog.debug("DECIPHER ENGINE: Using sigFn for nFn (same function)")
              nFn = sigFn
          }
 
          // Strategy 2: URL constructor approach (fallback)
          if sigFn == nil && nFn == nil {
-             print("DECIPHER ENGINE: Trying URL constructor approach...")
+             YouTubeLog.debug("DECIPHER ENGINE: Trying URL constructor approach...")
              context.exceptionHandler = { _, e in
-                 if let exc = e { print("DECIPHER ENGINE: JS exception: \(exc)") }
+                 if let exc = e { YouTubeLog.debug("DECIPHER ENGINE: JS exception: \(exc)") }
              }
              // Evaluate full script so global scope has all functions
              context.evaluateScript(script)
@@ -51,9 +51,9 @@
          }
 
          if sigFn == nil && nFn == nil {
-             print("DECIPHER ENGINE: WARNING - No decipher functions found")
+             YouTubeLog.debug("DECIPHER ENGINE: WARNING - No decipher functions found")
          }
-         print("DECIPHER ENGINE: Ready - sigFn=\(sigFn?.isObject == true ? "yes" : "no") nFn=\(nFn?.isObject == true ? "yes" : "no")")
+         YouTubeLog.debug("DECIPHER ENGINE: Ready - sigFn=\(sigFn?.isObject == true ? "yes" : "no") nFn=\(nFn?.isObject == true ? "yes" : "no")")
      }
 
      // MARK: - Individual Function Extraction (Primary)
@@ -87,7 +87,7 @@
              guard extracted.insert(current).inserted else { continue }
 
              guard let def = extractRawFunctionDef(named: current) else {
-                 print("DECIPHER ENGINE: Could not extract '\(current)' from source")
+                 YouTubeLog.debug("DECIPHER ENGINE: Could not extract '\(current)' from source")
                  continue
              }
 
@@ -95,12 +95,12 @@
 
              let fnVal = ctx.objectForKeyedSubscript(current)
              if fnVal?.isUndefined == true {
-                 print("DECIPHER ENGINE: WARNING - '\(current)' still undefined after eval")
+                 YouTubeLog.debug("DECIPHER ENGINE: WARNING - '\(current)' still undefined after eval")
              }
 
              let deps = findCalledFunctions(in: def, owner: current, known: extracted)
              if !deps.isEmpty {
-                 print("DECIPHER ENGINE: '\(current)' deps found: \(deps.joined(separator: ","))")
+                 YouTubeLog.debug("DECIPHER ENGINE: '\(current)' deps found: \(deps.joined(separator: ","))")
              }
              for dep in deps {
                  if !extracted.contains(dep) && !toExtract.contains(dep) {
@@ -112,12 +112,12 @@
          let fn = ctx.objectForKeyedSubscript(name)
          if fn?.isObject == true {
              let fnLen = fn?.forProperty("length")?.toInt32() ?? 0
-             print("DECIPHER ENGINE: Extracted '\(name)' (arity=\(fnLen)) with \(extracted.count - 1) dependencies")
-             if let name2 = findSigFuncName() { print("DECIPHER ENGINE: sig candidate = '\(name2)'") }
-             if let name2 = findNFuncName() { print("DECIPHER ENGINE: n candidate = '\(name2)'") }
+             YouTubeLog.debug("DECIPHER ENGINE: Extracted '\(name)' (arity=\(fnLen)) with \(extracted.count - 1) dependencies")
+             if let name2 = findSigFuncName() { YouTubeLog.debug("DECIPHER ENGINE: sig candidate = '\(name2)'") }
+             if let name2 = findNFuncName() { YouTubeLog.debug("DECIPHER ENGINE: n candidate = '\(name2)'") }
              return fn
          }
-         print("DECIPHER ENGINE: Failed to extract '\(name)' after eval")
+         YouTubeLog.debug("DECIPHER ENGINE: Failed to extract '\(name)' after eval")
          return nil
      }
 
@@ -242,7 +242,7 @@
      // MARK: - URL Constructor Discovery (Eval Full Script)
 
      private func discoverFnInContext() -> JSValue? {
-         print("DECIPHER ENGINE: Searching for URL constructor in JS context...")
+         YouTubeLog.debug("DECIPHER ENGINE: Searching for URL constructor in JS context...")
          let searchJS = """
          (function() {
              function looksLikeUrlCtor(fn) {
@@ -281,10 +281,10 @@
          })()
          """
          guard let fn = context.evaluateScript(searchJS), fn.isObject else {
-             print("DECIPHER ENGINE: No URL constructor found in context")
+             YouTubeLog.debug("DECIPHER ENGINE: No URL constructor found in context")
              return nil
          }
-         print("DECIPHER ENGINE: Found URL constructor in context")
+         YouTubeLog.debug("DECIPHER ENGINE: Found URL constructor in context")
          return fn
      }
 
@@ -294,12 +294,12 @@
          if let fn = sigFn {
              let result = fn.call(withArguments: [signature])
              if let str = result?.toString(), !str.isEmpty, str != "undefined" {
-                 print("DECIPHER ENGINE: Sig deciphered (len \(str.count))")
+                 YouTubeLog.debug("DECIPHER ENGINE: Sig deciphered (len \(str.count))")
                  return str
              }
-             print("DECIPHER ENGINE: Sig fn returned invalid: \(result?.toString() ?? "nil")")
+             YouTubeLog.debug("DECIPHER ENGINE: Sig fn returned invalid: \(result?.toString() ?? "nil")")
          }
-         print("DECIPHER ENGINE: Sig strategies failed, returning original (len \(signature.count))")
+         YouTubeLog.debug("DECIPHER ENGINE: Sig strategies failed, returning original (len \(signature.count))")
          return signature
      }
 
@@ -307,12 +307,12 @@
          if let fn = nFn {
              let result = fn.call(withArguments: [nValue])
              if let str = result?.toString(), !str.isEmpty, str != "undefined" {
-                 print("DECIPHER ENGINE: 'n' deciphered (len \(str.count))")
+                 YouTubeLog.debug("DECIPHER ENGINE: 'n' deciphered (len \(str.count))")
                  return str
              }
-             print("DECIPHER ENGINE: 'n' fn returned invalid: \(result?.toString() ?? "nil")")
+             YouTubeLog.debug("DECIPHER ENGINE: 'n' fn returned invalid: \(result?.toString() ?? "nil")")
          }
-         print("DECIPHER ENGINE: 'n' strategies failed, returning original (len \(nValue.count))")
+         YouTubeLog.debug("DECIPHER ENGINE: 'n' strategies failed, returning original (len \(nValue.count))")
          return nValue
      }
  }

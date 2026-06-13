@@ -1,6 +1,10 @@
 import Foundation
+#if canImport(Network)
 import Network
+#endif
+#if canImport(os)
 import os
+#endif
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -97,7 +101,7 @@ public actor InnerTubeAPI {
         if let pot = try? await provider.token(for: videoId) {
             poToken = pot
             poTokenVideoId = videoId
-            tubeLog.notice("[InnerTube] prefetchPoToken ✅ (len=\(pot.count)) for \(videoId, privacy: .public)")
+            tubeLog.notice("[InnerTube] prefetchPoToken  (len=\(pot.count)) for \(videoId)")
         }
     }
 
@@ -141,9 +145,11 @@ public actor InnerTubeAPI {
     // WiFi switch, cellular handover). A fresh visitorData is issued on the next
     // browse request and is tied to the new IP context, avoiding UNPLAYABLE responses
     // caused by session/IP mismatch after a network transition.
+#if canImport(Network)
     private nonisolated let pathMonitor = NWPathMonitor()
     private var lastPathStatus: NWPath.Status?
     private var lastInterface: NWInterface.InterfaceType?
+#endif
 
     /// The web client context used to fetch home/search/channel feeds.
     let webClientContext: [String: Any] = [
@@ -318,19 +324,23 @@ public actor InnerTubeAPI {
         // stuck requests and tolerance for temporarily slow cellular connections.
         config.timeoutIntervalForRequest = Self.requestTimeoutInterval
         config.timeoutIntervalForResource = 60
+#if canImport(Darwin)
         config.waitsForConnectivity = true
+#endif
         // Disable URL cache — YouTube InnerTube uses POST requests which are not cacheable,
         // and the system URL cache wastes memory accumulating response data.
         config.urlCache = nil
         self.session = URLSession(configuration: config)
         self.authToken = authToken
         self.poTokenProvider = poTokenProvider
+#if canImport(Network)
         // Start observing network path changes so visitorData is cleared on network transitions.
         // Callbacks arrive on pathMonitor's private queue; actor re-entry via Task is safe.
         pathMonitor.pathUpdateHandler = { [weak self] path in
             Task { await self?.handlePathUpdate(path) }
         }
         pathMonitor.start(queue: .global(qos: .background))
+#endif
     }
 
     /// Package-internal initializer for testing only.
@@ -343,6 +353,7 @@ public actor InnerTubeAPI {
 
     // MARK: - Private: Network path handler
 
+#if canImport(Network)
     private func handlePathUpdate(_ path: NWPath) {
         // Reset visitorData when the network interface changes (e.g. WiFi -> Cellular, VPN toggle).
         // visitorData is tied to IP/session context; using a stale one on a new network
@@ -359,12 +370,13 @@ public actor InnerTubeAPI {
             tubeLog.notice("visitorData cleared — network interface changed (\(String(describing: prevInterface)) -> \(String(describing: self.lastInterface)))")
         }
     }
+#endif
 
     // MARK: - Auth
 
     public func setAuthToken(_ token: String?) {
         let msg = token != nil ? "token(\(token!.prefix(8))…)" : "nil"
-        tubeLog.notice("setAuthToken: \(msg, privacy: .public)")
+        tubeLog.notice("setAuthToken: \(msg)")
         authToken = token
     }
 
@@ -372,7 +384,7 @@ public actor InnerTubeAPI {
     /// flow. Used by postWebCreator to compute the SAPISIDHASH Authorization header.
     public func setSAPISID(_ value: String?) {
         let msg = value != nil ? "present" : "nil"
-        tubeLog.notice("setSAPISID: \(msg, privacy: .public)")
+        tubeLog.notice("setSAPISID: \(msg)")
         sapisid = value
     }
 

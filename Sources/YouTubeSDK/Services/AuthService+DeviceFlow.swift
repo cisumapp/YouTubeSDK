@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 extension InternalAuthService {
     // MARK: - Device Code request
@@ -49,7 +52,7 @@ extension InternalAuthService {
         creds: YouTubeClientCredentials,
         pollImmediately: Bool = false
     ) async {
-        authLog.notice("Starting poll loop (interval \(Int(interval))s, immediate=\(pollImmediately))")
+        YouTubeLog.info("Starting poll loop (interval \(Int(interval))s, immediate=\(pollImmediately))")
         var skipInitialSleep = pollImmediately
         while !Task.isCancelled {
             if skipInitialSleep {
@@ -61,9 +64,9 @@ extension InternalAuthService {
 
             do {
                 try await exchangeDeviceCode(deviceCode: deviceCode, creds: creds)
-                authLog.notice("✅ Token exchanged — fetching user info")
+                YouTubeLog.info(" Token exchanged — fetching user info")
                 try await fetchUserInfo()
-                authLog.notice("✅ Signed in as \(accountName ?? "unknown")")
+                YouTubeLog.info(" Signed in as \(accountName ?? "unknown")")
                 // Fetch YouTube.com SAPISID cookie for WEB_CREATOR SAPISIDHASH auth.
                 // Best-effort: runs in background, failure doesn't block sign-in.
                 Task { await self.fetchYouTubeWebCookies() }
@@ -71,17 +74,17 @@ extension InternalAuthService {
                 pollTask = nil
                 return
             } catch AuthError.authorizationPending {
-                authLog.debug("Polling… (authorization_pending)")
+                YouTubeLog.debug("Polling… (authorization_pending)")
                 continue
             } catch AuthError.slowDown {
-                authLog.notice("slow_down received — waiting extra 5s")
+                YouTubeLog.info("slow_down received — waiting extra 5s")
                 try? await Task.sleep(nanoseconds: UInt64(5 * 1_000_000_000))
                 continue
             } catch let urlError as URLError {
-                authLog.notice("Network error during poll (transient, retrying): \(urlError.localizedDescription)")
+                YouTubeLog.info("Network error during poll (transient, retrying): \(urlError.localizedDescription)")
                 continue
             } catch {
-                authLog.error("❌ Poll error: \(String(describing: error))")
+                YouTubeLog.error(" Poll error: \(String(describing: error))")
                 if isSignedIn { return }
                 self.error = error
                 pendingActivation = nil
@@ -89,7 +92,7 @@ extension InternalAuthService {
                 return
             }
         }
-        authLog.notice("Poll loop cancelled")
+        YouTubeLog.info("Poll loop cancelled")
     }
 
     func exchangeDeviceCode(deviceCode: String, creds: YouTubeClientCredentials) async throws {

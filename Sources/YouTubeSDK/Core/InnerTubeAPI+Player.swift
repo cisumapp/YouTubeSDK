@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(os)
 import os
+#endif
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
@@ -25,7 +27,7 @@ public extension InnerTubeAPI {
 
         // 1. Try iOS Authenticated + WebSafari in parallel (highest-value clients).
         //    The first to return HLS wins. This saves ~500-1000ms vs sequential probing.
-        tubeLog.notice("fetchPlayerInfoSmart: racing iOS-Auth + WebSafari for \(videoId, privacy: .public)")
+        tubeLog.notice("fetchPlayerInfoSmart: racing iOS-Auth + WebSafari for \(videoId)")
         let (iosResult, webResult): (PlayerInfo?, PlayerInfo?) = await withTaskGroup(
             of: (Bool, PlayerInfo?).self,
             returning: (PlayerInfo?, PlayerInfo?).self
@@ -36,7 +38,7 @@ public extension InnerTubeAPI {
                         let info = try await self.fetchPlayerInfoiOSAuthenticated(videoId: videoId)
                         return (true, info)
                     } catch {
-                        tubeLog.error("fetchPlayerInfoSmart: iOS-Auth failed — \(error, privacy: .public)")
+                        tubeLog.error("fetchPlayerInfoSmart: iOS-Auth failed — \(error)")
                         return (true, nil)
                     }
                 }
@@ -46,7 +48,7 @@ public extension InnerTubeAPI {
                     let info = try await self.fetchPlayerInfoWebSafari(videoId: videoId)
                     return (false, info)
                 } catch {
-                    tubeLog.error("fetchPlayerInfoSmart: WebSafari failed — \(error, privacy: .public)")
+                    tubeLog.error("fetchPlayerInfoSmart: WebSafari failed — \(error)")
                     return (false, nil)
                 }
             }
@@ -56,7 +58,7 @@ public extension InnerTubeAPI {
             for await (isIOS, info) in group {
                 if let info, info.hlsURL != nil {
                     let label = isIOS ? "iOS-Auth" : "WebSafari"
-                    tubeLog.notice("fetchPlayerInfoSmart: ✅ \(label, privacy: .public) hit for \(videoId, privacy: .public)")
+                    tubeLog.notice("fetchPlayerInfoSmart:  \(label) hit for \(videoId)")
                     // Cancel remaining tasks by returning early — structured concurrency
                     // will cancel pending group tasks when we return.
                     if isIOS { iosOut = info } else { webOut = info }
@@ -69,26 +71,26 @@ public extension InnerTubeAPI {
 
         // Collect the best result from the parallel race (prefer HLS)
         if let webResult, webResult.hlsURL != nil {
-            tubeLog.notice("fetchPlayerInfoSmart: ✅ WebSafari (post-race) hit for \(videoId, privacy: .public)")
+            tubeLog.notice("fetchPlayerInfoSmart:  WebSafari (post-race) hit for \(videoId)")
             return webResult
         }
         if let iosResult, iosResult.hlsURL != nil {
-            tubeLog.notice("fetchPlayerInfoSmart: ✅ iOS-Auth (post-race) hit for \(videoId, privacy: .public)")
+            tubeLog.notice("fetchPlayerInfoSmart:  iOS-Auth (post-race) hit for \(videoId)")
             return iosResult
         }
         // If neither returned HLS but one has formats, prefer that
         if let webResult, !webResult.formats.isEmpty {
-            tubeLog.notice("fetchPlayerInfoSmart: ✅ WebSafari (formats) hit for \(videoId, privacy: .public)")
+            tubeLog.notice("fetchPlayerInfoSmart:  WebSafari (formats) hit for \(videoId)")
             return webResult
         }
         if let iosResult, !iosResult.formats.isEmpty {
-            tubeLog.notice("fetchPlayerInfoSmart: ✅ iOS-Auth (formats) hit for \(videoId, privacy: .public)")
+            tubeLog.notice("fetchPlayerInfoSmart:  iOS-Auth (formats) hit for \(videoId)")
             return iosResult
         }
 
         // 3. Try promising unauthenticated clients in parallel
         // (TVEmbedded, MWEB, AndroidVR) — return the first one that provides HLS.
-        tubeLog.notice("fetchPlayerInfoSmart: trying parallel unauthenticated fallbacks for \(videoId, privacy: .public)")
+        tubeLog.notice("fetchPlayerInfoSmart: trying parallel unauthenticated fallbacks for \(videoId)")
         let parallelInfo: PlayerInfo? = await withTaskGroup(of: PlayerInfo?.self) { group in
             group.addTask { try? await self.fetchPlayerInfoTVEmbedded(videoId: videoId) }
             group.addTask { try? await self.fetchPlayerInfoMWEB(videoId: videoId) }
@@ -102,7 +104,7 @@ public extension InnerTubeAPI {
             return nil as PlayerInfo?
         }
         if let parallelInfo {
-            tubeLog.notice("fetchPlayerInfoSmart: ✅ Parallel fallback successful for \(videoId, privacy: .public)")
+            tubeLog.notice("fetchPlayerInfoSmart:  Parallel fallback successful for \(videoId)")
             return parallelInfo
         }
 
@@ -111,11 +113,11 @@ public extension InnerTubeAPI {
             do {
                 let info = try await fetchPlayerInfoAuthenticated(videoId: videoId)
                 if info.hlsURL != nil || !info.formats.isEmpty {
-                    tubeLog.notice("fetchPlayerInfoSmart: ✅ TVAuth hit for \(videoId, privacy: .public)")
+                    tubeLog.notice("fetchPlayerInfoSmart:  TVAuth hit for \(videoId)")
                     return info
                 }
             } catch {
-                tubeLog.error("fetchPlayerInfoSmart: TVAuth failed — \(error, privacy: .public)")
+                tubeLog.error("fetchPlayerInfoSmart: TVAuth failed — \(error)")
                 errors.append(error)
             }
         }
@@ -124,11 +126,11 @@ public extension InnerTubeAPI {
         do {
             let info = try await fetchPlayerInfoTVEmbeddedSimply(videoId: videoId)
             if info.hlsURL != nil {
-                tubeLog.notice("fetchPlayerInfoSmart: ✅ TVEmbeddedSimply hit for \(videoId, privacy: .public)")
+                tubeLog.notice("fetchPlayerInfoSmart:  TVEmbeddedSimply hit for \(videoId)")
                 return info
             }
         } catch {
-            tubeLog.error("fetchPlayerInfoSmart: TVEmbeddedSimply failed — \(error, privacy: .public)")
+            tubeLog.error("fetchPlayerInfoSmart: TVEmbeddedSimply failed — \(error)")
             errors.append(error)
         }
 
@@ -137,11 +139,11 @@ public extension InnerTubeAPI {
             do {
                 let info = try await fetchPlayerInfoWebCreator(videoId: videoId)
                 if !info.formats.isEmpty {
-                    tubeLog.notice("fetchPlayerInfoSmart: ✅ WebCreator hit for \(videoId, privacy: .public) (Adaptive only)")
+                    tubeLog.notice("fetchPlayerInfoSmart:  WebCreator hit for \(videoId) (Adaptive only)")
                     return info
                 }
             } catch {
-                tubeLog.error("fetchPlayerInfoSmart: WebCreator failed — \(error, privacy: .public)")
+                tubeLog.error("fetchPlayerInfoSmart: WebCreator failed — \(error)")
                 errors.append(error)
             }
         }
@@ -150,17 +152,17 @@ public extension InnerTubeAPI {
         do {
             let info = try await fetchPlayerInfoAndroid(videoId: videoId)
             if !info.formats.isEmpty {
-                tubeLog.notice("fetchPlayerInfoSmart: ✅ Android hit for \(videoId, privacy: .public) (Muxed formats)")
+                tubeLog.notice("fetchPlayerInfoSmart:  Android hit for \(videoId) (Muxed formats)")
                 return info
             }
         } catch {
-            tubeLog.error("fetchPlayerInfoSmart: Android failed — \(error, privacy: .public)")
+            tubeLog.error("fetchPlayerInfoSmart: Android failed — \(error)")
             errors.append(error)
         }
 
         // Final fallback: standard iOS unauthenticated
         let elapsed = Date().timeIntervalSince(startTime)
-        tubeLog.notice("fetchPlayerInfoSmart: All high-quality clients failed (\(String(format: "%.2f", elapsed))s), using standard iOS fallback for \(videoId, privacy: .public)")
+        tubeLog.notice("fetchPlayerInfoSmart: All high-quality clients failed (\(String(format: "%.2f", elapsed))s), using standard iOS fallback for \(videoId)")
         return try await fetchPlayerInfo(videoId: videoId)
     }
 
@@ -179,7 +181,7 @@ public extension InnerTubeAPI {
         // The token is stored by storeExternalPoToken() after the hidden WKWebView
         // extracts it from the YouTube player's /player API request body.
         if hasPot, let pot = poToken {
-            tubeLog.notice("[InnerTube] ✅ poToken applied to \(videoId, privacy: .public) via iOS client (len=\(pot.count))")
+            tubeLog.notice("[InnerTube]  poToken applied to \(videoId) via iOS client (len=\(pot.count))")
             info = info.applyingPoToken(pot)
         }
         return info
@@ -231,7 +233,7 @@ public extension InnerTubeAPI {
         let data = try await postWebSafari(body: body, visitorIdOverride: webVD)
         var info = try await parsePlayerInfo(from: data, videoId: videoId)
         if hasPot, let pot = poToken {
-            tubeLog.notice("[InnerTube] ✅ poToken applied to \(videoId, privacy: .public) via WebSafari+pot client (len=\(pot.count))")
+            tubeLog.notice("[InnerTube]  poToken applied to \(videoId) via WebSafari+pot client (len=\(pot.count))")
             info = info.applyingPoToken(pot)
         }
         return info
@@ -448,7 +450,7 @@ public extension InnerTubeAPI {
         let data = try await postPlayerAuthenticated(body: body)
         var info = try await parsePlayerInfo(from: data, videoId: videoId)
         if let pot = poToken, poTokenVideoId == videoId {
-            tubeLog.notice("[InnerTube] ✅ poToken applied to \(videoId, privacy: .public) via iOS-auth client (len=\(pot.count))")
+            tubeLog.notice("[InnerTube]  poToken applied to \(videoId) via iOS-auth client (len=\(pot.count))")
             info = info.applyingPoToken(pot)
         }
         return info
@@ -495,7 +497,7 @@ public extension InnerTubeAPI {
            let sabrURL = URL(string: sabrStr),
            let bearerToken = authToken
         {
-            tubeLog.notice("D-16 SABR URL (first 200): \(sabrStr.prefix(200), privacy: .public)")
+            tubeLog.notice("D-16 SABR URL (first 200): \(sabrStr.prefix(200))")
             let capturedToken = bearerToken
             Task.detached {
                 var req = URLRequest(url: sabrURL)
@@ -507,7 +509,7 @@ public extension InnerTubeAPI {
                 {
                     let ct = http.value(forHTTPHeaderField: "Content-Type") ?? "?"
                     let preview = String(data: data.prefix(300), encoding: .utf8) ?? "(binary \(data.count) bytes)"
-                    tubeLog.notice("D-16 SABR GET Bearer: HTTP \(http.statusCode, privacy: .public) ct=\(ct, privacy: .public) body_preview=\(preview.prefix(200), privacy: .public)")
+                    tubeLog.notice("D-16 SABR GET Bearer: HTTP \(http.statusCode) ct=\(ct) body_preview=\(preview.prefix(200))")
                 } else {
                     tubeLog.notice("D-16 SABR GET Bearer: fail/timeout")
                 }
@@ -543,7 +545,7 @@ public extension InnerTubeAPI {
         body["contentCheckOk"] = true
         let data = try await post(endpoint: "player", body: body)
         let cards = parseEndCards(from: data)
-        tubeLog.notice("fetchEndCards id=\(videoId, privacy: .public) → \(cards.count, privacy: .public) cards")
+        tubeLog.notice("fetchEndCards id=\(videoId) → \(cards.count) cards")
         return cards
     }
 
@@ -574,7 +576,7 @@ public extension InnerTubeAPI {
             "cmt": "0",
         ]
         await pingTrackingURL(url, extraParams: extraParams)
-        tubeLog.notice("reportPlaybackStarted: videoId=\(videoId, privacy: .public) cpn=\(cpn.prefix(4), privacy: .public)… usedFallback=\(trackingURLs == nil, privacy: .public)")
+        tubeLog.notice("reportPlaybackStarted: videoId=\(videoId) cpn=\(cpn.prefix(4))… usedFallback=\(trackingURLs == nil)")
     }
 
     /// Fires `videostatsWatchtimeUrl` to record a watched interval in the user's YouTube watch history.
@@ -602,7 +604,7 @@ public extension InnerTubeAPI {
             "et": String(format: "%.3f", segmentEnd),
         ]
         await pingTrackingURL(url, extraParams: extraParams)
-        tubeLog.notice("reportWatchtime: videoId=\(videoId, privacy: .public) st=\(Int(segmentStart))s et=\(Int(segmentEnd))s")
+        tubeLog.notice("reportWatchtime: videoId=\(videoId) st=\(Int(segmentStart))s et=\(Int(segmentEnd))s")
     }
 
     /// Fetches account-bound playback tracking URLs by making an authenticated TV-client
@@ -627,13 +629,13 @@ public extension InnerTubeAPI {
                 let pbURL = URL(string: pbStr),
                 let wtURL = URL(string: wtStr)
             else {
-                tubeLog.notice("fetchAuthenticatedTrackingURLs: no tracking data in TV player response for \(videoId, privacy: .public)")
+                tubeLog.notice("fetchAuthenticatedTrackingURLs: no tracking data in TV player response for \(videoId)")
                 return nil
             }
-            tubeLog.notice("fetchAuthenticatedTrackingURLs: account-bound URLs obtained for \(videoId, privacy: .public)")
+            tubeLog.notice("fetchAuthenticatedTrackingURLs: account-bound URLs obtained for \(videoId)")
             return PlaybackTrackingURLs(playbackURL: pbURL, watchtimeURL: wtURL)
         } catch {
-            tubeLog.error("fetchAuthenticatedTrackingURLs failed for \(videoId, privacy: .public): \(error, privacy: .public)")
+            tubeLog.error("fetchAuthenticatedTrackingURLs failed for \(videoId): \(error)")
             return nil
         }
     }
@@ -656,13 +658,13 @@ public extension InnerTubeAPI {
                 let pbURL = URL(string: pbStr),
                 let wtURL = URL(string: wtStr)
             else {
-                tubeLog.notice("fetchAuthenticatedTrackingURLs: no tracking data in TV player response for \(videoId, privacy: .public)")
+                tubeLog.notice("fetchAuthenticatedTrackingURLs: no tracking data in TV player response for \(videoId)")
                 return nil
             }
-            tubeLog.notice("fetchAuthenticatedTrackingURLs: account-bound URLs obtained for \(videoId, privacy: .public)")
+            tubeLog.notice("fetchAuthenticatedTrackingURLs: account-bound URLs obtained for \(videoId)")
             return PlaybackTrackingURLs(playbackURL: pbURL, watchtimeURL: wtURL)
         } catch {
-            tubeLog.error("fetchAuthenticatedTrackingURLs failed for \(videoId, privacy: .public): \(error, privacy: .public)")
+            tubeLog.error("fetchAuthenticatedTrackingURLs failed for \(videoId): \(error)")
             return nil
         }
     }
@@ -690,11 +692,11 @@ public extension InnerTubeAPI {
             ?? (playabilityDict?["errorScreen"] as? [String: Any])
             .flatMap { ($0["playerErrorMessageRenderer"] as? [String: Any])?["subreason"] as? [String: Any] }
             .flatMap { extractText($0) }
-        tubeLog.notice("parsePlayerInfo id=\(videoId, privacy: .public) playability=\(playabilityStatus, privacy: .public) reason=\(playabilityReason ?? "nil", privacy: .public) hasStreamingData=\(streamingData != nil, privacy: .public)")
+        tubeLog.notice("parsePlayerInfo id=\(videoId) playability=\(playabilityStatus) reason=\(playabilityReason ?? "nil") hasStreamingData=\(streamingData != nil)")
 
         if streamingData == nil, playabilityStatus != "OK" {
             let reason = playabilityReason ?? "This video is unavailable (\(playabilityStatus))"
-            tubeLog.error("❌ parsePlayerInfo: unplayable — \(reason, privacy: .public)")
+            tubeLog.error(" parsePlayerInfo: unplayable — \(reason)")
             let signInStatuses: Set = ["LOGIN_REQUIRED", "AGE_VERIFICATION_REQUIRED", "AGE_CHECK_REQUIRED"]
             if signInStatuses.contains(playabilityStatus) {
                 throw APIError.signInRequired
@@ -794,7 +796,7 @@ public extension InnerTubeAPI {
         let muxedParsed = uniqueFormats.filter { $0.mimeType.contains(", ") }
         let summary = muxedParsed.map { "itag=\($0.itag) \($0.label) \($0.url != nil ? "url=yes" : "url=no")" }.joined(separator: "; ")
         if !summary.isEmpty {
-            tubeLog.notice("muxedFormats for \(videoId, privacy: .public): [\(summary, privacy: .public)]")
+            tubeLog.notice("muxedFormats for \(videoId): [\(summary)]")
         }
 
         // Handle HLS and DASH manifests (also need n-descramble)
@@ -813,14 +815,14 @@ public extension InnerTubeAPI {
         {
             if let solved = await YouTubeJSResolver.shared.solveN(playerID: pid, n: firstScrambled) {
                 solvedMapping = (unsolved: firstScrambled, solved: solved)
-                tubeLog.notice("n-solver mapping found for \(videoId, privacy: .public): \(firstScrambled as NSString) → \(solved as NSString)")
+                tubeLog.notice("n-solver mapping found for \(videoId): \(firstScrambled as NSString) → \(solved as NSString)")
             }
         }
 
         // Diagnostics
         let adaptiveHeights = uniqueFormats.filter { $0.mimeType.hasPrefix("video/") }.map(\.height).sorted().reversed()
         let topHeights = adaptiveHeights.prefix(5).map(String.init).joined(separator: ", ")
-        tubeLog.notice("parsePlayerInfo id=\(videoId, privacy: .public) hls=\(hlsURL != nil, privacy: .public) totalFormats=\(uniqueFormats.count, privacy: .public) topHeights=\(topHeights, privacy: .public)")
+        tubeLog.notice("parsePlayerInfo id=\(videoId) hls=\(hlsURL != nil) totalFormats=\(uniqueFormats.count) topHeights=\(topHeights)")
 
         // Captions — parse from captions.playerCaptionsTracklistRenderer.captionTracks
         let captionTracks: [InternalCaptionTrack] = {
@@ -849,7 +851,7 @@ public extension InnerTubeAPI {
                 return InternalCaptionTrack(id: trackId, baseURL: baseURL, name: name, languageCode: languageCode, isAutoGenerated: isAuto)
             }
         }()
-        tubeLog.notice("parsePlayerInfo: captionTracks=\(captionTracks.count, privacy: .public)")
+        tubeLog.notice("parsePlayerInfo: captionTracks=\(captionTracks.count)")
 
         // Playback tracking
         let trackingURLs: PlaybackTrackingURLs? = {
@@ -883,11 +885,11 @@ public extension InnerTubeAPI {
 
         let hasAnyURL = hlsURL != nil || uniqueFormats.contains { $0.url != nil }
         if !hasAnyURL {
-            tubeLog.error("❌ parsePlayerInfo: streamingData present but all format URLs are nil (cipher-protected?)")
+            tubeLog.error(" parsePlayerInfo: streamingData present but all format URLs are nil (cipher-protected?)")
             throw APIError.unavailable("Stream URLs require decryption — not supported by this client")
         }
         let endCards = parseEndCards(from: json)
-        tubeLog.notice("parsePlayerInfo: endCards=\(endCards.count, privacy: .public)")
+        tubeLog.notice("parsePlayerInfo: endCards=\(endCards.count)")
         return PlayerInfo(video: video, formats: uniqueFormats, hlsURL: hlsURL, dashURL: dashURL, captionTracks: captionTracks, trackingURLs: trackingURLs, endCards: endCards, nSolver: solvedMapping)
     }
 
@@ -969,7 +971,7 @@ public extension InnerTubeAPI {
             let endMs = parseInt("endMs")
             let id = renderer["id"] as? String ?? UUID().uuidString
 
-            tubeLog.notice("endCard id=\(id, privacy: .public) style=\(styleRaw, privacy: .public) videoId=\(videoId ?? "nil", privacy: .public) startMs=\(startMs, privacy: .public) endMs=\(endMs, privacy: .public)")
+            tubeLog.notice("endCard id=\(id) style=\(styleRaw) videoId=\(videoId ?? "nil") startMs=\(startMs) endMs=\(endMs)")
 
             return EndCard(
                 id: id,
@@ -1004,7 +1006,7 @@ public extension InnerTubeAPI {
         }
         comps?.queryItems = items
         guard let url = comps?.url else {
-            tubeLog.error("pingTrackingURL: failed to build URL from \(baseURL, privacy: .public)")
+            tubeLog.error("pingTrackingURL: failed to build URL from \(baseURL)")
             return
         }
         var request = URLRequest(url: url)
@@ -1019,19 +1021,19 @@ public extension InnerTubeAPI {
         do {
             let (_, response) = try await session.data(for: request)
             if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
-                tubeLog.warning("pingTrackingURL: HTTP \(http.statusCode) for \(url.absoluteString.prefix(120), privacy: .public)")
+                tubeLog.warning("pingTrackingURL: HTTP \(http.statusCode) for \(url.absoluteString.prefix(120))")
             }
         } catch is CancellationError {
             // Task was cancelled (user navigated away) — expected, do not retry.
         } catch {
-            tubeLog.warning("pingTrackingURL: transient error (\(error.localizedDescription, privacy: .public)) — retrying once")
+            tubeLog.warning("pingTrackingURL: transient error (\(error.localizedDescription)) — retrying once")
             do {
                 let (_, response) = try await session.data(for: request)
                 if let http = response as? HTTPURLResponse, !(200 ..< 300).contains(http.statusCode) {
-                    tubeLog.error("pingTrackingURL: retry HTTP \(http.statusCode) for \(url.absoluteString.prefix(120), privacy: .public)")
+                    tubeLog.error("pingTrackingURL: retry HTTP \(http.statusCode) for \(url.absoluteString.prefix(120))")
                 }
             } catch {
-                tubeLog.error("pingTrackingURL: retry also failed — \(error.localizedDescription, privacy: .public)")
+                tubeLog.error("pingTrackingURL: retry also failed — \(error.localizedDescription)")
             }
         }
     }

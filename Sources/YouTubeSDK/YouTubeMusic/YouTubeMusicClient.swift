@@ -34,11 +34,11 @@ public actor YouTubeMusicClient {
                 return songs
             }
         } catch {
-            YouTubeDebugLogger.log("YouTubeMusic search primary endpoint failed for query=\"\(normalizedQuery)\" - \(error.localizedDescription)")
+            YouTubeLog.debug("YouTubeMusic search primary endpoint failed for query=\"\(normalizedQuery)\" - \(error.localizedDescription)")
         }
 
         if let fallbackSongs = try? await searchViaYouTube(normalizedQuery), !fallbackSongs.isEmpty {
-            YouTubeDebugLogger.log("YouTubeMusic search used generic YouTube fallback for query=\"\(normalizedQuery)\"")
+            YouTubeLog.debug("YouTubeMusic search used generic YouTube fallback for query=\"\(normalizedQuery)\"")
             return fallbackSongs
         }
 

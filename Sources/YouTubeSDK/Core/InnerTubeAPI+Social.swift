@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(os)
 import os
+#endif
 
 private let tubeLog = Logger(subsystem: appSubsystem, category: "InnerTube")
 
@@ -41,7 +43,7 @@ public extension InnerTubeAPI {
         body["playlistId"] = "WL"
         body["actions"] = [["addedInternalVideoId": videoId, "action": "ACTION_ADD_VIDEO"]]
         _ = try await postTV(endpoint: "browse/edit_playlist", body: body)
-        tubeLog.notice("addToWatchLater videoId=\(videoId, privacy: .public)")
+        tubeLog.notice("addToWatchLater videoId=\(videoId)")
     }
 
     /// Removes a video from the authenticated user's Watch Later playlist (id \"WL\").
@@ -52,7 +54,7 @@ public extension InnerTubeAPI {
         body["playlistId"] = "WL"
         body["actions"] = [["removedInternalVideoId": videoId, "action": "ACTION_REMOVE_VIDEO"]]
         _ = try await postTV(endpoint: "browse/edit_playlist", body: body)
-        tubeLog.notice("removeFromWatchLater videoId=\(videoId, privacy: .public)")
+        tubeLog.notice("removeFromWatchLater videoId=\(videoId)")
     }
 
     /// Sends a feed feedback signal to YouTube.
@@ -64,7 +66,7 @@ public extension InnerTubeAPI {
         var body = makeBody(client: tvClientContext)
         body["feedbackTokens"] = [token]
         _ = try await postTV(endpoint: "feedback", body: body)
-        tubeLog.notice("sendFeedback token=\(token.prefix(20), privacy: .public)…")
+        tubeLog.notice("sendFeedback token=\(token.prefix(20))…")
     }
 
     // MARK: - Next (related videos / SuggestionsController equivalent)
@@ -91,13 +93,13 @@ public extension InnerTubeAPI {
             let videos = parseRelatedInternalVideos(from: tvData)
             let status = parseLikeStatus(from: tvData)
             let chapters = parseChapters(from: webData)
-            tubeLog.notice("fetchNextInfo (auth) → related=\(videos.count, privacy: .public) chapters=\(chapters.count, privacy: .public)")
+            tubeLog.notice("fetchNextInfo (auth) → related=\(videos.count) chapters=\(chapters.count)")
             return NextInfo(relatedInternalVideos: videos, likeStatus: status, chapters: chapters)
         } else {
             let data = try await post(endpoint: "next", body: tvBody)
             let videos = parseRelatedInternalVideos(from: data)
             let chapters = parseChapters(from: data)
-            tubeLog.notice("fetchNextInfo (anon) → related=\(videos.count, privacy: .public) chapters=\(chapters.count, privacy: .public)")
+            tubeLog.notice("fetchNextInfo (anon) → related=\(videos.count) chapters=\(chapters.count)")
             return NextInfo(relatedInternalVideos: videos, likeStatus: .none, chapters: chapters)
         }
     }
@@ -113,13 +115,13 @@ public extension InnerTubeAPI {
         body["videoId"] = videoId
         let nextData = try await post(endpoint: "next", body: body)
         guard let token = parseCommentsContinuationToken(from: nextData) else {
-            tubeLog.notice("fetchComments: no comments token for videoId=\(videoId, privacy: .public)")
+            tubeLog.notice("fetchComments: no comments token for videoId=\(videoId)")
             return []
         }
         let commentsBody = makeBody(client: webClientContext, continuationToken: token)
         let commentsData = try await post(endpoint: "next", body: commentsBody)
         let comments = parseComments(from: commentsData)
-        tubeLog.notice("fetchComments videoId=\(videoId, privacy: .public) → \(comments.count, privacy: .public) comments")
+        tubeLog.notice("fetchComments videoId=\(videoId) → \(comments.count) comments")
         return comments
     }
 
@@ -166,7 +168,7 @@ public extension InnerTubeAPI {
             }
         }
         walk(json)
-        tubeLog.notice("parseLikeStatus → \(String(describing: found ?? .none), privacy: .public)")
+        tubeLog.notice("parseLikeStatus → \(String(describing: found ?? .none))")
         return found ?? .none
     }
 
@@ -325,7 +327,7 @@ public extension InnerTubeAPI {
                 ))
             }
             if !comments.isEmpty {
-                tubeLog.notice("parseComments: entity format → \(comments.count, privacy: .public) comments")
+                tubeLog.notice("parseComments: entity format → \(comments.count) comments")
                 return comments
             }
         }
@@ -365,10 +367,10 @@ public extension InnerTubeAPI {
         }
         walk(json)
         if !comments.isEmpty {
-            tubeLog.notice("parseComments: legacy commentRenderer format → \(comments.count, privacy: .public) comments")
+            tubeLog.notice("parseComments: legacy commentRenderer format → \(comments.count) comments")
         } else {
             let topKeys = Array(json.keys.prefix(6))
-            tubeLog.notice("parseComments: 0 comments — top-level keys: \(topKeys, privacy: .public)")
+            tubeLog.notice("parseComments: 0 comments — top-level keys: \(topKeys)")
         }
         return comments
     }

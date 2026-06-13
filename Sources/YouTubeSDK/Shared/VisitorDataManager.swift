@@ -2,10 +2,13 @@
 //  VisitorDataManager.swift
 //  YouTubeSDK
 //
-//  Created by GitHub Copilot on behalf of user.
+//  Created by Aarav Gupta on behalf of user.
 //
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Manages fetching and caching of YouTube's `visitorData` token.
 public actor VisitorDataManager {

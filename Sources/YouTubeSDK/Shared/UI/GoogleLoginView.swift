@@ -1,3 +1,6 @@
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 //
 //  GoogleLoginView.swift
 //  YouTubeSDK
@@ -5,6 +8,7 @@
 //  Created by Aarav Gupta on 30/12/25.
 //
 
+#if os(iOS) || os(macOS)
 import SwiftUI
 import WebKit
 
@@ -22,7 +26,6 @@ import WebKit
 //    }
 // }
 
-#if os(iOS) || os(macOS)
 
 public struct GoogleLoginView: View {
     public var onLoginSuccess: (String) -> Void
@@ -113,7 +116,7 @@ enum SharedWebViewLogic {
                     // Combine into "key=value; key2=value2" string
                     let cookieString = cookies.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")
 
-                    print("✅ [GoogleLoginView] Login Successful!")
+                    YouTubeLog.debug(" [GoogleLoginView] Login Successful!")
                     self.onCookiesFound(cookieString)
                 }
             }

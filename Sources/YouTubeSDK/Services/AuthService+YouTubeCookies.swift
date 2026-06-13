@@ -1,5 +1,10 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(os)
 import os
+#endif
 
 // MARK: - YouTube Web Session Cookie Exchange
 
@@ -32,11 +37,11 @@ extension InternalAuthService {
         do {
             token = try await validAccessToken()
         } catch {
-            authLog.notice("[cookies] fetchYouTubeWebCookies: no valid token (\(error)) — skipping")
+            YouTubeLog.info("[cookies] fetchYouTubeWebCookies: no valid token (\(error)) — skipping")
             return
         }
 
-        authLog.notice("[cookies] Fetching YouTube web session cookies for SAPISIDHASH auth")
+        YouTubeLog.info("[cookies] Fetching YouTube web session cookies for SAPISIDHASH auth")
 
         // Diagnostic + gaiaId extraction: tokeninfo returns `sub` (numeric Gaia ID) when `openid`
         // scope is present. Required for the MultiBearer Multilogin request format.
@@ -44,15 +49,15 @@ extension InternalAuthService {
            let (infoData, _) = try? await URLSession.shared.data(from: infoURL)
         {
             let infoStr = String(data: infoData, encoding: .utf8) ?? "<non-UTF8>"
-            authLog.notice("[cookies] tokeninfo=\(infoStr)")
+            YouTubeLog.info("[cookies] tokeninfo=\(infoStr)")
             // Extract gaiaId from `sub` claim (only present when openid scope is in token)
             if let infoJSON = try? JSONSerialization.jsonObject(with: infoData) as? [String: Any],
                let sub = infoJSON["sub"] as? String, !sub.isEmpty
             {
                 gaiaId = sub
-                authLog.notice("[cookies] gaiaId=\(sub) — MultiBearer Multilogin enabled")
+                YouTubeLog.info("[cookies] gaiaId=\(sub) — MultiBearer Multilogin enabled")
             } else {
-                authLog.notice("[cookies] gaiaId not in tokeninfo — token missing openid scope; need re-sign-in")
+                YouTubeLog.info("[cookies] gaiaId not in tokeninfo — token missing openid scope; need re-sign-in")
             }
         }
 
@@ -68,7 +73,7 @@ extension InternalAuthService {
         do {
             (_, response1) = try await noRedirectSession.data(for: req1)
         } catch {
-            authLog.notice("[cookies] OAuthLogin request failed: \(error.localizedDescription)")
+            YouTubeLog.info("[cookies] OAuthLogin request failed: \(error.localizedDescription)")
             return
         }
 
@@ -79,19 +84,19 @@ extension InternalAuthService {
         else {
             let code = (response1 as? HTTPURLResponse)?.statusCode ?? 0
             let wwwAuth = (response1 as? HTTPURLResponse)?.value(forHTTPHeaderField: "WWW-Authenticate") ?? "none"
-            authLog.notice("[cookies] OAuthLogin did not redirect (HTTP \(code)) WWW-Authenticate=\(wwwAuth) — trying Multilogin fallback")
+            YouTubeLog.info("[cookies] OAuthLogin did not redirect (HTTP \(code)) WWW-Authenticate=\(wwwAuth) — trying Multilogin fallback")
             await fetchSAPISIDViaMultilogin(token: token)
             return
         }
 
-        authLog.notice("[cookies] OAuthLogin redirect received — loading MergeSession")
+        YouTubeLog.info("[cookies] OAuthLogin redirect received — loading MergeSession")
 
         // Step 2 — load MergeSession URL via shared session (sets SAPISID cookie)
         // URLSession.shared uses HTTPCookieStorage.shared and follows redirects by default.
         do {
             _ = try await URLSession.shared.data(from: mergeURL)
         } catch {
-            authLog.notice("[cookies] MergeSession request failed: \(error.localizedDescription)")
+            YouTubeLog.info("[cookies] MergeSession request failed: \(error.localizedDescription)")
             return
         }
 
@@ -99,11 +104,11 @@ extension InternalAuthService {
         let ytURL = URL(string: "https://www.youtube.com")!
         let cookies = HTTPCookieStorage.shared.cookies(for: ytURL) ?? []
         guard let sapisidCookie = cookies.first(where: { $0.name == "SAPISID" }) else {
-            authLog.notice("[cookies] SAPISID cookie not found after MergeSession — SAPISID unavailable")
+            YouTubeLog.info("[cookies] SAPISID cookie not found after MergeSession — SAPISID unavailable")
             return
         }
 
-        authLog.notice("[cookies] ✅ SAPISID obtained — WEB_CREATOR SAPISIDHASH auth enabled")
+        YouTubeLog.info("[cookies]  SAPISID obtained — WEB_CREATOR SAPISIDHASH auth enabled")
         sapisid = sapisidCookie.value
         // Persist to Keychain so it survives app restarts — no re-fetch needed on next launch.
         Task { await tokenManager.setSAPISID(sapisidCookie.value) }
@@ -127,13 +132,13 @@ extension InternalAuthService {
         // gaiaId is the numeric Gaia ID (OIDC `sub` claim) from tokeninfo when openid scope is present.
         if let gid = gaiaId, !gid.isEmpty {
             request.setValue("MultiBearer \(token):\(gid)", forHTTPHeaderField: "Authorization")
-            authLog.notice("[cookies] Multilogin MultiBearer with gaiaId=\(gid)")
+            YouTubeLog.info("[cookies] Multilogin MultiBearer with gaiaId=\(gid)")
         } else {
             // Fallback: old Bearer format — likely to fail (INVALID_INPUT) without gaiaId.
             // User must sign out + sign in to get an openid-scoped token.
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             request.setValue("0", forHTTPHeaderField: "X-Goog-AuthUser")
-            authLog.notice("[cookies] Multilogin fallback Bearer (no gaiaId — openid scope missing)")
+            YouTubeLog.info("[cookies] Multilogin fallback Bearer (no gaiaId — openid scope missing)")
         }
         request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
         request.httpBody = " ".data(using: .utf8) // Space forces POST (Chromium pattern)
@@ -143,14 +148,14 @@ extension InternalAuthService {
         do {
             (data, response) = try await URLSession.shared.data(for: request)
         } catch {
-            authLog.notice("[cookies] Multilogin request failed: \(error.localizedDescription)")
+            YouTubeLog.info("[cookies] Multilogin request failed: \(error.localizedDescription)")
             return
         }
 
         guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             let body = String(data: data, encoding: .utf8) ?? "<non-UTF8>"
-            authLog.notice("[cookies] Multilogin HTTP \(code) body=\(body) — SAPISID via Multilogin unavailable")
+            YouTubeLog.info("[cookies] Multilogin HTTP \(code) body=\(body) — SAPISID via Multilogin unavailable")
             return
         }
 
@@ -166,11 +171,11 @@ extension InternalAuthService {
               let entry = cookies.first(where: { $0["name"] as? String == "SAPISID" }),
               let value = entry["value"] as? String, !value.isEmpty
         else {
-            authLog.notice("[cookies] Multilogin response missing SAPISID — unavailable")
+            YouTubeLog.info("[cookies] Multilogin response missing SAPISID — unavailable")
             return
         }
 
-        authLog.notice("[cookies] ✅ SAPISID obtained via Multilogin — WEB_CREATOR SAPISIDHASH auth enabled")
+        YouTubeLog.info("[cookies]  SAPISID obtained via Multilogin — WEB_CREATOR SAPISIDHASH auth enabled")
         sapisid = value
         Task { await tokenManager.setSAPISID(value) }
     }

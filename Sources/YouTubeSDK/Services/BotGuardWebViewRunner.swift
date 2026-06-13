@@ -1,5 +1,10 @@
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 #if canImport(WebKit)
+#if canImport(os)
 import os
+#endif
 import WebKit
 
 private let bgwvLog = Logger(subsystem: appSubsystem, category: "BotGuardWV")
@@ -102,14 +107,14 @@ public final class BotGuardWebViewRunner: NSObject {
             if result.hasMinter {
                 mintCallbackReady = true
                 mintExpiry = Date().addingTimeInterval(TimeInterval(result.ttl > 0 ? result.ttl : 3600))
-                bgwvLog.notice("[BotGuardWV] ✅ prepare() succeeded — hasMinter=true integrityTokenLen=\(result.integrityTokenLen) ttl=\(result.ttl)s")
+                bgwvLog.notice("[BotGuardWV]  prepare() succeeded — hasMinter=true integrityTokenLen=\(result.integrityTokenLen) ttl=\(result.ttl)s")
                 // Copy WKWebView's YouTube/Google cookies to HTTPCookieStorage.shared.
                 // AVFoundation (AVURLAsset) uses the shared cookie storage when making
                 // CDN requests, so propagating the WKWebView's youtube.com session cookies
                 // ensures the CDN sees the same session that solved the BotGuard challenge.
                 await propagateWebViewCookies()
             } else {
-                bgwvLog.notice("[BotGuardWV] ⚠️ prepare() — hasMinter=false (WAA returned null integrityToken; websafe fallback path)")
+                bgwvLog.notice("[BotGuardWV]  prepare() — hasMinter=false (WAA returned null integrityToken; websafe fallback path)")
             }
             prepareTask = nil
             return result
@@ -199,9 +204,9 @@ public final class BotGuardWebViewRunner: NSObject {
         }
 
         if let token {
-            bgwvLog.notice("[BotGuardWV] ✅ mintToken(identifier.len=\(effectiveIdentifier.count) webVD=\(self.webVisitorData.isEmpty ? "no" : "yes")) → token len=\(token.count)")
+            bgwvLog.notice("[BotGuardWV]  mintToken(identifier.len=\(effectiveIdentifier.count) webVD=\(self.webVisitorData.isEmpty ? "no" : "yes")) → token len=\(token.count)")
         } else {
-            bgwvLog.notice("[BotGuardWV] ⚠️ mintToken(identifier.len=\(effectiveIdentifier.count) webVD=\(self.webVisitorData.isEmpty ? "no" : "yes")) → nil")
+            bgwvLog.notice("[BotGuardWV]  mintToken(identifier.len=\(effectiveIdentifier.count) webVD=\(self.webVisitorData.isEmpty ? "no" : "yes")) → nil")
         }
 
         return token
@@ -253,7 +258,7 @@ public final class BotGuardWebViewRunner: NSObject {
         Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 45_000_000_000)
             guard let self, prepareCont != nil else { return }
-            bgwvLog.notice("[BotGuardWV] ⚠️ prepare() timed out after 45 s")
+            bgwvLog.notice("[BotGuardWV]  prepare() timed out after 45 s")
             prepareCont?.resume(returning: PrepareResult(
                 hasMinter: false, websafeToken: nil, ttl: 3600, integrityTokenLen: 0, webVisitorData: ""
             ))

@@ -7,6 +7,9 @@
 //
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 // MARK: - Response Models
 
@@ -128,7 +131,7 @@ public actor YouTubeOAuthDeviceFlow {
             throw OAuthError.invalidResponse
         }
 
-        print("[YouTubeSDK] Device auth started — user code: \(decoded.userCode)")
+        YouTubeLog.debug("[YouTubeSDK] Device auth started — user code: \(decoded.userCode)")
         return decoded
     }
 
@@ -139,20 +142,20 @@ public actor YouTubeOAuthDeviceFlow {
 
         while Date() < expiresAt {
             attempt += 1
-            print("[YouTubeSDK] Polling for token (attempt \(attempt))...")
+            YouTubeLog.debug("[YouTubeSDK] Polling for token (attempt \(attempt))...")
 
             let result = try await requestToken(code: deviceCode, grantType: nil)
 
             switch result {
             case let .success(token):
-                print("[YouTubeSDK] Authorization received — token expires at \(token.expiresAt)")
+                YouTubeLog.debug("[YouTubeSDK] Authorization received — token expires at \(token.expiresAt)")
                 return token
 
             case .pending:
                 try await Task.sleep(nanoseconds: UInt64(interval) * 1_000_000_000)
 
             case let .slowDown(newInterval):
-                print("[YouTubeSDK] Slow down — waiting \(newInterval)s")
+                YouTubeLog.debug("[YouTubeSDK] Slow down — waiting \(newInterval)s")
                 try await Task.sleep(nanoseconds: UInt64(newInterval) * 1_000_000_000)
             }
         }
@@ -229,13 +232,13 @@ public actor YouTubeOAuthDeviceFlow {
     // MARK: - Token Refresh
 
     public func refreshToken(refreshToken: String) async throws -> OAuthToken {
-        print("[YouTubeSDK] Refreshing token...")
+        YouTubeLog.debug("[YouTubeSDK] Refreshing token...")
 
         let result = try await requestToken(code: refreshToken, grantType: "refresh_token", fallbackRefreshToken: refreshToken)
 
         switch result {
         case let .success(token):
-            print("[YouTubeSDK] Token refreshed successfully")
+            YouTubeLog.debug("[YouTubeSDK] Token refreshed successfully")
             return token
         default:
             throw OAuthError.invalidResponse

@@ -1,8 +1,9 @@
 import Foundation
 import Observation
+#if canImport(os)
 import os
+#endif
 
-let authLog = ViewModelLogger(category: "Auth")
 
 // MARK: - InternalAuthService
 
@@ -105,7 +106,7 @@ final class InternalAuthService {
         if isSignedIn, accountName == nil {
             Task {
                 do { try await fetchUserInfo() }
-                catch { authLog.error("fetchUserInfo on init failed: \(String(describing: error))") }
+                catch { YouTubeLog.error("fetchUserInfo on init failed: \(String(describing: error))") }
             }
         }
     }
@@ -116,7 +117,7 @@ final class InternalAuthService {
     /// Call this when the user taps "Sign in".
     func beginSignIn() async {
         guard !isSigningIn else {
-            authLog.notice("beginSignIn() — already in progress, ignoring duplicate call")
+            YouTubeLog.info("beginSignIn() — already in progress, ignoring duplicate call")
             return
         }
         isSigningIn = true
@@ -124,16 +125,16 @@ final class InternalAuthService {
         pollTask?.cancel()
         error = nil
         pendingActivation = nil
-        authLog.notice("beginSignIn() — fetching credentials…")
+        YouTubeLog.info("beginSignIn() — fetching credentials…")
 
         let creds = await credentialsFetcher.credentials()
-        authLog.notice("Using clientId: \(creds.clientId)")
+        YouTubeLog.info("Using clientId: \(creds.clientId)")
 
         do {
             let deviceResponse = try await retryWithBackoff { [self] in
                 try await requestDeviceCode(creds: creds)
             }
-            authLog.notice("✅ Got device code. userCode=\(deviceResponse.userCode) expiresIn=\(deviceResponse.expiresIn)s interval=\(deviceResponse.interval)s")
+            YouTubeLog.info(" Got device code. userCode=\(deviceResponse.userCode) expiresIn=\(deviceResponse.expiresIn)s interval=\(deviceResponse.interval)s")
             let expiresAt = Date().addingTimeInterval(TimeInterval(deviceResponse.expiresIn))
             let fallbackURL = URL(string: "https://yt.be/activate") ?? URL(string: "https://youtube.com/activate")!
             let verURL = URL(string: deviceResponse.verificationURL) ?? fallbackURL
@@ -157,7 +158,7 @@ final class InternalAuthService {
                 )
             }
         } catch {
-            authLog.error("❌ beginSignIn error: \(String(describing: error))")
+            YouTubeLog.error(" beginSignIn error: \(String(describing: error))")
             self.error = error
         }
     }
@@ -176,7 +177,7 @@ final class InternalAuthService {
         guard !isSignedIn, accessToken == nil else { return }
         guard let pending = pendingActivation, pending.expiresAt > Date() else { return }
         guard let deviceCode = currentDeviceCode, let creds = currentCreds else { return }
-        authLog.notice("handleForeground() — restarting poll immediately")
+        YouTubeLog.info("handleForeground() — restarting poll immediately")
         pollTask?.cancel()
         let interval = currentInterval
         pollTask = Task { [weak self] in
@@ -195,12 +196,12 @@ final class InternalAuthService {
         guard isSignedIn, let expiry = tokenExpiry else { return }
         guard expiry.timeIntervalSinceNow < 5 * 60 else { return }
         guard let refresh = refreshToken else { return }
-        authLog.notice("refreshIfNeeded() — token expires soon, refreshing")
+        YouTubeLog.info("refreshIfNeeded() — token expires soon, refreshing")
         let creds = await credentialsFetcher.credentials()
         do {
             try await refreshAccessToken(refreshToken: refresh, creds: creds)
         } catch {
-            authLog.error("refreshIfNeeded() failed: \(String(describing: error))")
+            YouTubeLog.error("refreshIfNeeded() failed: \(String(describing: error))")
         }
     }
 
@@ -257,7 +258,7 @@ final class InternalAuthService {
         tokenRefreshTask?.cancel()
         guard let expiry = tokenExpiry, refreshToken != nil else { return }
         let delay = max(expiry.timeIntervalSinceNow - 5 * 60, 0)
-        authLog.notice("scheduleProactiveRefresh() — refreshing in \(Int(delay))s")
+        YouTubeLog.info("scheduleProactiveRefresh() — refreshing in \(Int(delay))s")
         tokenRefreshTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             guard !Task.isCancelled, let self else { return }
@@ -265,10 +266,10 @@ final class InternalAuthService {
             let creds = await credentialsFetcher.credentials()
             do {
                 try await refreshAccessToken(refreshToken: refresh, creds: creds)
-                authLog.notice("scheduleProactiveRefresh() — token refreshed ✅")
+                YouTubeLog.info("scheduleProactiveRefresh() — token refreshed ")
                 scheduleProactiveRefresh()
             } catch {
-                authLog.error("scheduleProactiveRefresh() failed: \(String(describing: error))")
+                YouTubeLog.error("scheduleProactiveRefresh() failed: \(String(describing: error))")
             }
         }
     }

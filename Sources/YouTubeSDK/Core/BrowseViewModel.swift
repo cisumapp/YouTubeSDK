@@ -1,8 +1,9 @@
 import Foundation
 import Observation
+#if canImport(os)
 import os
+#endif
 
-private let browseLog = ViewModelLogger(category: "Browse")
 
 // MARK: - BrowseError
 
@@ -81,6 +82,7 @@ public final class BrowseViewModel {
     // MARK: - Feed hide handling
 
     private func observeFeedHideNotifications() {
+#if canImport(Darwin)
         hideObserverTasks.append(Task { [weak self] in
             for await note in NotificationCenter.default.notifications(named: .hideInternalVideoFromFeed) {
                 guard let self, let videoId = note.userInfo?["videoId"] as? String else { continue }
@@ -93,6 +95,7 @@ public final class BrowseViewModel {
                 removeChannel(id: channelId)
             }
         })
+#endif
     }
 
     public func removeInternalVideo(id: String) {
@@ -111,11 +114,11 @@ public final class BrowseViewModel {
 
     public func select(section: BrowseSection) {
         guard section != currentSection else {
-            browseLog.notice("select: already on section \(section.title) — ignored")
+            YouTubeLog.info("select: already on section \(section.title) — ignored")
             return
         }
         let fromTitle = currentSection.title
-        browseLog.notice("select: switching to \(section.title) from \(fromTitle)")
+        YouTubeLog.info("select: switching to \(section.title) from \(fromTitle)")
         currentSection = section
         loadContent(for: section, refresh: true, source: "select")
     }
@@ -123,7 +126,7 @@ public final class BrowseViewModel {
     /// Reloads the given section unconditionally, bypassing the same-section guard in `select`.
     /// Use this to retry a failed/empty fetch or to recover from an observation gap.
     public func reload(section: BrowseSection) {
-        browseLog.notice("reload: forcing refresh of \(section.title)")
+        YouTubeLog.info("reload: forcing refresh of \(section.title)")
         currentSection = section
         loadContent(for: section, refresh: true, source: "reload")
     }
@@ -147,7 +150,7 @@ public final class BrowseViewModel {
         let chCount = subscribedChannels.count
         let vCount = videoGroups.flatMap(\.videos).count
         let loading = isLoading
-        browseLog.notice("loadContent source=\(source) section=\(target.title) refresh=\(refresh) channels=\(chCount) videos=\(vCount) loading=\(loading)")
+        YouTubeLog.info("loadContent source=\(source) section=\(target.title) refresh=\(refresh) channels=\(chCount) videos=\(vCount) loading=\(loading)")
         if refresh {
             videoGroups = []
             subscribedChannels = []
@@ -190,7 +193,7 @@ public final class BrowseViewModel {
                         layout: .row
                     )
                 }
-                browseLog.notice("UI-testing inject: populated \(ids.count) recommended videos synchronously")
+                YouTubeLog.info("UI-testing inject: populated \(ids.count) recommended videos synchronously")
                 return
             }
         }
@@ -210,10 +213,10 @@ public final class BrowseViewModel {
         else {
             let hasToken = videoGroups.last?.nextPageToken != nil
             let lastInternalVideoInGroup = videoGroups.last?.videos.contains(where: { $0.id == lastInternalVideo.id }) == true
-            browseLog.notice("loadMore skipped: section=\(currentSection.title) isLoading=\(isLoading) isLoadingMore=\(isLoadingMore) hasToken=\(hasToken) lastInternalVideoMatch=\(lastInternalVideoInGroup)")
+            YouTubeLog.info("loadMore skipped: section=\(currentSection.title) isLoading=\(isLoading) isLoadingMore=\(isLoadingMore) hasToken=\(hasToken) lastInternalVideoMatch=\(lastInternalVideoInGroup)")
             return
         }
-        browseLog.notice("loadMore triggered: section=\(currentSection.title) currentCount=\(videoGroups.first?.videos.count ?? 0)")
+        YouTubeLog.info("loadMore triggered: section=\(currentSection.title) currentCount=\(videoGroups.first?.videos.count ?? 0)")
         isLoadingMore = true // synchronous guard — prevents duplicate pagination tasks before the Task body runs
         fetchTask = Task { await fetchNextPage(for: currentSection) }
     }
@@ -225,7 +228,7 @@ public final class BrowseViewModel {
         let age = loadedAt.map { Date().timeIntervalSince($0) } ?? .infinity
         guard age > threshold else { return }
         let ageDesc = age.isFinite ? "\(Int(age))s" : "never loaded"
-        browseLog.notice("refreshIfStale: age=\(ageDesc) > threshold=\(Int(threshold))s — refreshing \(currentSection.title)")
+        YouTubeLog.info("refreshIfStale: age=\(ageDesc) > threshold=\(Int(threshold))s — refreshing \(currentSection.title)")
         loadContent(refresh: true, source: "refreshIfStale")
     }
 
@@ -267,7 +270,7 @@ public final class BrowseViewModel {
     private func fetchSection(_ section: BrowseSection) async {
         isLoading = true
         defer { isLoading = false }
-        browseLog.notice("Fetching section: \(section.title) (\(String(describing: section.type)))")
+        YouTubeLog.info("Fetching section: \(section.title) (\(String(describing: section.type)))")
         do {
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask { try await self.fetchSectionBody(section) }
@@ -287,13 +290,13 @@ public final class BrowseViewModel {
                    authSections.contains(section.type)
                 {
                     isAuthRequired = true
-                    browseLog.notice("Auth required for \(section.title) (HTTP \(code))")
+                    YouTubeLog.info("Auth required for \(section.title) (HTTP \(code))")
                 } else {
                     isAuthRequired = false
                     if case BrowseError.timeout = error {
-                        browseLog.error("⏱ \(section.title) timed out after \(Int(Self.fetchTimeoutSeconds))s")
+                        YouTubeLog.error(" \(section.title) timed out after \(Int(Self.fetchTimeoutSeconds))s")
                     } else {
-                        browseLog.error("❌ \(section.title) error: \(String(describing: error))")
+                        YouTubeLog.error(" \(section.title) error: \(String(describing: error))")
                     }
                     self.error = error
                 }
@@ -358,12 +361,12 @@ public final class BrowseViewModel {
                 var seen = Set<String>()
                 recommendedShortsInternalVideos = (searchShorts + subsShorts + homeShorts)
                     .filter { seen.insert($0.id).inserted }
-                browseLog.notice("Recommended: \(recommendedShortsInternalVideos.count) shorts (search=\(searchShorts.count) subs=\(subsShorts.count) home=\(homeShorts.count))")
+                YouTubeLog.info("Recommended: \(recommendedShortsInternalVideos.count) shorts (search=\(searchShorts.count) subs=\(subsShorts.count) home=\(homeShorts.count))")
                 if group.videos.isEmpty {
                     isAuthRequired = true
                     recommendedUsesSearchFallback = true
                     let popular = try await api.search(query: "popular")
-                    browseLog.notice("Recommended: home feed empty, using search fallback (nextToken=\(popular.nextPageToken != nil))")
+                    YouTubeLog.info("Recommended: home feed empty, using search fallback (nextToken=\(popular.nextPageToken != nil))")
                     var deduped = popular
                     deduped.videos = deduplicated(popular.videos)
                     videoGroups = [deduped]
@@ -425,14 +428,14 @@ public final class BrowseViewModel {
         case .channels:
             if hasAuthToken {
                 let channels = try await api.fetchSubscribedChannels()
-                browseLog.notice("channels fetch complete: \(channels.count) channels, isCancelled=\(Task.isCancelled)")
+                YouTubeLog.info("channels fetch complete: \(channels.count) channels, isCancelled=\(Task.isCancelled)")
                 if !Task.isCancelled {
                     isAuthRequired = channels.isEmpty
                     subscribedChannels = channels
                     videoGroups = []
                     let chCount = subscribedChannels.count
                     let authReq = isAuthRequired
-                    browseLog.notice("channels state set: subscribedChannels=\(chCount) isAuthRequired=\(authReq)")
+                    YouTubeLog.info("channels state set: subscribedChannels=\(chCount) isAuthRequired=\(authReq)")
                     // Background-enrich avatars — the guide/params approaches yield no thumbnails;
                     // fetch each channel's About tab concurrently to get the avatar URL.
                     if !channels.isEmpty {
@@ -442,7 +445,7 @@ public final class BrowseViewModel {
                 }
             } else {
                 let localChannels = await LocalSubscriptionStore.shared.allChannels()
-                browseLog.notice("channels (local): \(localChannels.count) followed channels, isCancelled=\(Task.isCancelled)")
+                YouTubeLog.info("channels (local): \(localChannels.count) followed channels, isCancelled=\(Task.isCancelled)")
                 if !Task.isCancelled {
                     isAuthRequired = false
                     subscribedChannels = localChannels.map { $0.toChannel() }
@@ -482,10 +485,10 @@ public final class BrowseViewModel {
 
     private func fetchNextPage(for section: BrowseSection, autoChainDepth: Int = 0) async {
         guard let token = videoGroups.last?.nextPageToken else {
-            browseLog.notice("fetchNextPage: no token for section=\(section.title) — skipping")
+            YouTubeLog.info("fetchNextPage: no token for section=\(section.title) — skipping")
             return
         }
-        browseLog.notice("fetchNextPage start: section=\(section.title) token=\(token.prefix(20))…")
+        YouTubeLog.info("fetchNextPage start: section=\(section.title) token=\(token.prefix(20))…")
         isLoadingMore = true
         defer { isLoadingMore = false }
         do {
@@ -495,7 +498,7 @@ public final class BrowseViewModel {
                     try await api.fetchHomeRows(continuationToken: token)
                 }
                 if Task.isCancelled {
-                    browseLog.notice("fetchNextPage cancelled: section=\(section.title)")
+                    YouTubeLog.info("fetchNextPage cancelled: section=\(section.title)")
                 } else {
                     // Deduplicate new rows against all videos already in the feed.
                     // YouTube continuation responses occasionally re-include videos
@@ -508,19 +511,19 @@ public final class BrowseViewModel {
                         return copy
                     }.filter { !$0.videos.isEmpty }
                     let count = filteredRows.flatMap(\.videos).count
-                    browseLog.notice("fetchNextPage success: section=\(section.title) newInternalVideos=\(count) nextToken=\(newRows.last?.nextPageToken != nil)")
+                    YouTubeLog.info("fetchNextPage success: section=\(section.title) newInternalVideos=\(count) nextToken=\(newRows.last?.nextPageToken != nil)")
                     videoGroups.append(contentsOf: filteredRows)
                 }
             case .recommended:
                 if recommendedUsesSearchFallback {
-                    browseLog.notice("fetchNextPage: Recommended using search fallback path")
+                    YouTubeLog.info("fetchNextPage: Recommended using search fallback path")
                     let group = try await retryWithBackoff(label: "BrowseVM[\(section.title)]") {
                         try await api.search(query: "popular", continuationToken: token, filter: .default)
                     }
                     if Task.isCancelled {
-                        browseLog.notice("fetchNextPage cancelled: section=\(section.title)")
+                        YouTubeLog.info("fetchNextPage cancelled: section=\(section.title)")
                     } else {
-                        browseLog.notice("fetchNextPage success (search fallback): section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
+                        YouTubeLog.info("fetchNextPage success (search fallback): section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
                         mergeIntoFirstGroup(group)
                     }
                 } else {
@@ -528,9 +531,9 @@ public final class BrowseViewModel {
                         try await api.fetchHome(continuationToken: token)
                     }
                     if Task.isCancelled {
-                        browseLog.notice("fetchNextPage cancelled: section=\(section.title)")
+                        YouTubeLog.info("fetchNextPage cancelled: section=\(section.title)")
                     } else {
-                        browseLog.notice("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
+                        YouTubeLog.info("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
                         mergeIntoFirstGroup(group)
                     }
                 }
@@ -539,9 +542,9 @@ public final class BrowseViewModel {
                     try await api.fetchSubscriptions(continuationToken: token)
                 }
                 if Task.isCancelled {
-                    browseLog.notice("fetchNextPage cancelled: section=\(section.title)")
+                    YouTubeLog.info("fetchNextPage cancelled: section=\(section.title)")
                 } else {
-                    browseLog.notice("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
+                    YouTubeLog.info("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
                     mergeIntoFirstGroup(group)
                     // Re-sort globally after merging so videos from different pages
                     // remain in strict newest-first order across pagination boundaries.
@@ -554,9 +557,9 @@ public final class BrowseViewModel {
                     try await api.fetchHistory(continuationToken: token)
                 }
                 if Task.isCancelled {
-                    browseLog.notice("fetchNextPage cancelled: section=\(section.title)")
+                    YouTubeLog.info("fetchNextPage cancelled: section=\(section.title)")
                 } else {
-                    browseLog.notice("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
+                    YouTubeLog.info("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
                     mergeIntoFirstGroup(group)
                     // Auto-chain: when every video on this page is a Short, the view's
                     // .onAppear sentinel won't re-fire (the visible filtered list doesn't
@@ -565,7 +568,7 @@ public final class BrowseViewModel {
                        group.videos.allSatisfy(\.isShort),
                        group.nextPageToken != nil
                     {
-                        browseLog.notice("fetchNextPage auto-chain (all-Shorts page): section=\(section.title) depth=\(autoChainDepth)")
+                        YouTubeLog.info("fetchNextPage auto-chain (all-Shorts page): section=\(section.title) depth=\(autoChainDepth)")
                         await fetchNextPage(for: section, autoChainDepth: autoChainDepth + 1)
                     }
                 }
@@ -576,9 +579,9 @@ public final class BrowseViewModel {
                     try await api.fetchShorts()
                 }
                 if Task.isCancelled {
-                    browseLog.notice("fetchNextPage cancelled: section=\(section.title)")
+                    YouTubeLog.info("fetchNextPage cancelled: section=\(section.title)")
                 } else {
-                    browseLog.notice("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
+                    YouTubeLog.info("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
                     mergeIntoFirstGroup(group)
                 }
             case .music:
@@ -586,9 +589,9 @@ public final class BrowseViewModel {
                     try await api.fetchMusic()
                 }
                 if Task.isCancelled {
-                    browseLog.notice("fetchNextPage cancelled: section=\(section.title)")
+                    YouTubeLog.info("fetchNextPage cancelled: section=\(section.title)")
                 } else {
-                    browseLog.notice("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
+                    YouTubeLog.info("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
                     mergeIntoFirstGroup(group)
                 }
             case .gaming:
@@ -596,9 +599,9 @@ public final class BrowseViewModel {
                     try await api.fetchGaming()
                 }
                 if Task.isCancelled {
-                    browseLog.notice("fetchNextPage cancelled: section=\(section.title)")
+                    YouTubeLog.info("fetchNextPage cancelled: section=\(section.title)")
                 } else {
-                    browseLog.notice("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
+                    YouTubeLog.info("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
                     mergeIntoFirstGroup(group)
                 }
             case .news:
@@ -606,9 +609,9 @@ public final class BrowseViewModel {
                     try await api.fetchNews()
                 }
                 if Task.isCancelled {
-                    browseLog.notice("fetchNextPage cancelled: section=\(section.title)")
+                    YouTubeLog.info("fetchNextPage cancelled: section=\(section.title)")
                 } else {
-                    browseLog.notice("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
+                    YouTubeLog.info("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
                     mergeIntoFirstGroup(group)
                 }
             case .live:
@@ -616,9 +619,9 @@ public final class BrowseViewModel {
                     try await api.fetchLive()
                 }
                 if Task.isCancelled {
-                    browseLog.notice("fetchNextPage cancelled: section=\(section.title)")
+                    YouTubeLog.info("fetchNextPage cancelled: section=\(section.title)")
                 } else {
-                    browseLog.notice("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
+                    YouTubeLog.info("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
                     mergeIntoFirstGroup(group)
                 }
             case .sports:
@@ -626,9 +629,9 @@ public final class BrowseViewModel {
                     try await api.fetchSports()
                 }
                 if Task.isCancelled {
-                    browseLog.notice("fetchNextPage cancelled: section=\(section.title)")
+                    YouTubeLog.info("fetchNextPage cancelled: section=\(section.title)")
                 } else {
-                    browseLog.notice("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
+                    YouTubeLog.info("fetchNextPage success: section=\(section.title) newInternalVideos=\(group.videos.count) nextToken=\(group.nextPageToken != nil)")
                     mergeIntoFirstGroup(group)
                 }
             default:
@@ -636,7 +639,7 @@ public final class BrowseViewModel {
             }
         } catch {
             if !Task.isCancelled {
-                browseLog.error("fetchNextPage failed: section=\(section.title) error=\(String(describing: error))")
+                YouTubeLog.error("fetchNextPage failed: section=\(section.title) error=\(String(describing: error))")
                 self.error = error
             }
         }
@@ -677,7 +680,7 @@ public final class BrowseViewModel {
         guard !snapshot.isEmpty else { return }
         let missing = snapshot.filter { $0.thumbnailURL == nil }
         guard !missing.isEmpty else { return }
-        browseLog.notice("enrichChannelAvatars: fetching avatars for \(missing.count) channels")
+        YouTubeLog.info("enrichChannelAvatars: fetching avatars for \(missing.count) channels")
 
         let apiRef = api
         let indexByID: [String: Int] = Dictionary(
@@ -705,6 +708,6 @@ public final class BrowseViewModel {
 
         let finalCount = subscribedChannels.count(where: { $0.thumbnailURL != nil })
         let total = subscribedChannels.count
-        browseLog.notice("enrichChannelAvatars done: \(finalCount)/\(total) have avatars")
+        YouTubeLog.info("enrichChannelAvatars done: \(finalCount)/\(total) have avatars")
     }
 }

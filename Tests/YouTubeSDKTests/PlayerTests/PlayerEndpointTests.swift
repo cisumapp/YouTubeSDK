@@ -15,7 +15,7 @@ struct PlayerEndpointTests {
 
         // Assert: Ensure we have either HLS or a direct stream URL and that it is reachable.
         if let hls = video.hlsURL {
-            print("Found HLS manifest: \(hls.absoluteString)")
+            YouTubeLog.debug("Found HLS manifest: \(hls.absoluteString)")
             var request = URLRequest(url: hls)
             request.httpMethod = "GET"
             request.timeoutInterval = 20
@@ -25,7 +25,7 @@ struct PlayerEndpointTests {
             let prefix = String(data: data.prefix(128), encoding: .utf8) ?? ""
             #expect(prefix.contains("#EXTM3U") || prefix.contains("#EXT-X-STREAM-INF"))
         } else if let audio = video.bestAudioStream, let urlString = audio.url, let url = URL(string: urlString) {
-            print("Found audio stream: \(url.absoluteString)")
+            YouTubeLog.debug("Found audio stream: \(url.absoluteString)")
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
             request.setValue("bytes=0-0", forHTTPHeaderField: "Range")
@@ -37,7 +37,7 @@ struct PlayerEndpointTests {
             let contentType = http.value(forHTTPHeaderField: "Content-Type")?.lowercased() ?? ""
             #expect(contentType.contains("audio") || contentType.contains("video") || !contentType.isEmpty)
         } else if let muxed = video.bestMuxedStream, let urlString = muxed.url, let url = URL(string: urlString) {
-            print("Found muxed stream: \(url.absoluteString)")
+            YouTubeLog.debug("Found muxed stream: \(url.absoluteString)")
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
             request.setValue("bytes=0-0", forHTTPHeaderField: "Range")

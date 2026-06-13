@@ -5,10 +5,10 @@
 //  SwiftUI sheet for OAuth Device Authorization Grant flow.
 //
 
+#if os(iOS) || os(macOS)
 import SafariServices
 import SwiftUI
 
-#if os(iOS) || os(macOS)
 
 public struct YouTubeOAuthDeviceFlowView: View {
     public var onSuccess: (OAuthToken) -> Void

@@ -14,10 +14,10 @@ struct YouTubeSDKTests {
 
         if let hlsURL = video.hlsURL {
             // 1. Pass directly to AVPlayer
-            print(hlsURL)
+            YouTubeLog.debug(hlsURL)
         } else if let audio = video.bestAudioStream, let url = URL(string: audio.url ?? "") {
             // 2. Play high-quality audio
-            print(url)
+            YouTubeLog.debug(url)
         }
 
         // 3. Assert
@@ -26,7 +26,7 @@ struct YouTubeSDKTests {
         #expect(video.author == "Rick Astley")
 
         // Print it just to feel good
-        print("✅ Fetched: \(video.title) by \(video.author)")
+        YouTubeLog.debug(" Fetched: \(video.title) by \(video.author)")
     }
 
     @Test("Fetch Home Feed")

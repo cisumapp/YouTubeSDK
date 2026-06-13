@@ -1,3 +1,4 @@
+#if canImport(WebKit)
 //
 //  WebViewPoTokenProvider.swift
 //  YouTubeSDK
@@ -7,6 +8,9 @@
 //
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import WebKit
 
 /// A PoToken provider that extracts tokens natively on-device using a headless WKWebView.
@@ -138,3 +142,5 @@ public final class WebViewPoTokenProvider: NSObject, PoTokenProvider, WKScriptMe
         }
     }
 }
+
+#endif // canImport(WebKit)

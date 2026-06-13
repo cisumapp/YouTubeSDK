@@ -19,7 +19,7 @@ final class LiveAPITests: XCTestCase {
         do {
             let continuation = try await youtube.main.getHome()
             XCTAssertFalse(continuation.items.isEmpty, "Home feed should not be empty")
-            print("✅ Home feed fetched: \(continuation.items.count) items")
+            YouTubeLog.debug(" Home feed fetched: \(continuation.items.count) items")
         } catch {
             XCTFail("Home feed fetch failed with error: \(error)")
         }
@@ -41,7 +41,7 @@ final class LiveAPITests: XCTestCase {
         do {
             let results = try await youtube.music.search("vultures kany west")
             XCTAssertFalse(results.isEmpty, "Music search results should not be empty")
-            print("✅ Music search successful: \(results.count) songs")
+            YouTubeLog.debug(" Music search successful: \(results.count) songs")
         } catch {
             XCTFail("Music search failed with error: \(error)")
         }
@@ -65,7 +65,7 @@ final class LiveAPITests: XCTestCase {
             let video = try await youtube.main.video(id: "LlwHphMhUOo")
             XCTAssertNotNil(video.streamingData, "Streaming data should be present")
             XCTAssertTrue(video.hlsURL != nil || !video.streamingData!.formats.isEmpty, "Should have HLS or adaptive formats")
-            print("✅ Video resolution successful: \(video.title) (HLS: \(video.hlsURL != nil))")
+            YouTubeLog.debug(" Video resolution successful: \(video.title) (HLS: \(video.hlsURL != nil))")
         } catch {
             XCTFail("Video resolution failed with error: \(error)")
         }
@@ -87,7 +87,7 @@ final class LiveAPITests: XCTestCase {
         do {
             let results = try await youtube.charts.getTopSongs(country: "IN")
             XCTAssertFalse(results.isEmpty, "Charts should not be empty")
-            print("✅ Charts successful: \(results.count) items")
+            YouTubeLog.debug(" Charts successful: \(results.count) items")
         } catch {
             XCTFail("Charts failed with error: \(error)")
         }

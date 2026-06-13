@@ -64,7 +64,7 @@ public final class YouTube {
         oauthToken = token
         accessToken = token.accessToken
         updateClients()
-        print("[YouTubeSDK] OAuth authenticated — token expires: \(token.expiresAt)")
+        YouTubeLog.debug("[YouTubeSDK] OAuth authenticated — token expires: \(token.expiresAt)")
         return token
     }
 
@@ -106,7 +106,7 @@ public final class YouTube {
         }
         YouTubeOAuthClient.logout()
         updateClients()
-        print("[YouTubeSDK] Signed out")
+        YouTubeLog.debug("[YouTubeSDK] Signed out")
     }
 
     /// Signs out from OAuth only (preserves cookie session).
@@ -118,7 +118,7 @@ public final class YouTube {
         }
         YouTubeOAuthClient.logoutOAuth()
         updateClients()
-        print("[YouTubeSDK] OAuth session cleared")
+        YouTubeLog.debug("[YouTubeSDK] OAuth session cleared")
     }
 
     // MARK: - Private
@@ -135,7 +135,7 @@ public final class YouTube {
                     accessToken = refreshed.accessToken
                     updateClients()
                 } catch {
-                    print("[YouTubeSDK] Stored token expired and could not be refreshed: \(error)")
+                    YouTubeLog.debug("[YouTubeSDK] Stored token expired and could not be refreshed: \(error)")
                     accessToken = nil
                 }
             }

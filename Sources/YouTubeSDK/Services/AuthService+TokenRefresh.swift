@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 extension InternalAuthService {
     // MARK: - Token refresh
@@ -25,7 +28,7 @@ extension InternalAuthService {
            let oauthError = errJson["error"] as? String,
            ["invalid_grant", "invalid_client", "unauthorized_client"].contains(oauthError)
         {
-            authLog.error("refreshAccessToken: permanent failure (\(oauthError)) — signing out")
+            YouTubeLog.error("refreshAccessToken: permanent failure (\(oauthError)) — signing out")
             signOut()
             throw AuthError.tokenExchangeFailed
         }

@@ -1,8 +1,9 @@
 import Foundation
 import Observation
+#if canImport(os)
 import os
+#endif
 
-private let playlistLog = ViewModelLogger(category: "Playlist")
 
 // MARK: - QueuedPlaylistLoader
 
@@ -92,7 +93,7 @@ public final class PlaylistViewModel {
     private func fetch() async {
         isLoading = true
         defer { isLoading = false }
-        playlistLog.notice("fetchPlaylistInternalVideos id=\(playlistId) page=\(nextPageToken ?? "first")")
+        YouTubeLog.info("fetchPlaylistInternalVideos id=\(playlistId) page=\(nextPageToken ?? "first")")
         do {
             let group = try await retryWithBackoff(label: "PlaylistVM") {
                 try await api.fetchPlaylistInternalVideos(playlistId: self.playlistId, continuationToken: self.nextPageToken)
@@ -110,11 +111,11 @@ public final class PlaylistViewModel {
                 }
                 videos.append(contentsOf: tagged)
                 nextPageToken = group.nextPageToken
-                playlistLog.notice("fetchPlaylistInternalVideos → \(tagged.count) videos (total \(videos.count))")
+                YouTubeLog.info("fetchPlaylistInternalVideos → \(tagged.count) videos (total \(videos.count))")
             }
         } catch {
             if !Task.isCancelled {
-                playlistLog.error("fetchPlaylistInternalVideos error: \(String(describing: error))")
+                YouTubeLog.error("fetchPlaylistInternalVideos error: \(String(describing: error))")
                 self.error = error
             }
         }

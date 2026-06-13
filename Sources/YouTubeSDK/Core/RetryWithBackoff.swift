@@ -1,6 +1,5 @@
 import Foundation
 
-private let retryLog = ViewModelLogger(category: "RetryWithBackoff")
 
 /// Retries `operation` up to `maxAttempts` times on transient URLErrors,
 /// using exponential backoff. Permanent errors (e.g. `APIError`, decoding
@@ -34,7 +33,7 @@ func retryWithBackoff<T>(
             where transientCodes.contains(urlError.code) && attempt < maxAttempts
         {
             let tag = label.isEmpty ? "" : "[\(label)] "
-            retryLog.notice("\(tag)attempt \(attempt)/\(maxAttempts) failed (\(urlError.code.rawValue)), retrying in \(Int(delay))s")
+            YouTubeLog.info("\(tag)attempt \(attempt)/\(maxAttempts) failed (\(urlError.code.rawValue)), retrying in \(Int(delay))s")
             lastError = urlError
             try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             delay = min(delay * 2, maxDelay)

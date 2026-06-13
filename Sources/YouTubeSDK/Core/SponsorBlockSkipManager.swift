@@ -1,4 +1,10 @@
+#if canImport(AVFoundation)
 import AVFoundation
+#endif
+import Foundation
+#if canImport(Observation)
+import Observation
+#endif
 
 // MARK: - SponsorBlockDelegate
 
@@ -22,7 +28,9 @@ public protocol SponsorBlockDelegate: AnyObject {
 /// Called from the PlaybackViewModel time observer; all logic migrated from
 /// PlaybackViewModel+SponsorBlock.swift.
 @MainActor
+#if canImport(Observation)
 @Observable
+#endif
 public final class SponsorBlockSkipManager {
     // MARK: - State
 
@@ -34,8 +42,19 @@ public final class SponsorBlockSkipManager {
 
     // MARK: - Dependencies
 
+#if canImport(Observation)
     @ObservationIgnored public weak var delegate: (any SponsorBlockDelegate)?
+#else
+    public weak var delegate: (any SponsorBlockDelegate)?
+#endif
+
+#if canImport(AVFoundation)
+#if canImport(Observation)
     @ObservationIgnored public var player: AVPlayer?
+#else
+    public var player: AVPlayer?
+#endif
+#endif
 
     // MARK: - Init
 
@@ -65,12 +84,17 @@ public final class SponsorBlockSkipManager {
             case .skip:
                 guard !isSkippingSegment else { return true }
                 currentToastSegment = nil
+#if canImport(AVFoundation)
                 let effectiveDuration = player?.currentItem?.duration.seconds ?? delegate.duration
+#else
+                let effectiveDuration = delegate.duration
+#endif
                 if effectiveDuration > 0, seg.end >= effectiveDuration - 2.0 {
                     delegate.handlePlaybackEnd()
                     return true
                 }
                 isSkippingSegment = true
+#if canImport(AVFoundation)
                 guard let player else { return true }
                 player.seek(
                     to: CMTime(seconds: seg.end, preferredTimescale: 600),
@@ -84,6 +108,14 @@ public final class SponsorBlockSkipManager {
                         isSkippingSegment = false
                     }
                 }
+#else
+                delegate.snapCurrentTime(to: seg.end)
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    isSkippingSegment = false
+                }
+#endif
                 return true
             case .showToast:
                 currentToastSegment = seg
@@ -102,7 +134,11 @@ public final class SponsorBlockSkipManager {
     public func skipToastSegment() {
         guard let seg = currentToastSegment else { return }
         currentToastSegment = nil
+#if canImport(AVFoundation)
         let effectiveDuration = player?.currentItem?.duration.seconds ?? delegate?.duration ?? 0
+#else
+        let effectiveDuration = delegate?.duration ?? 0
+#endif
         if effectiveDuration > 0, seg.end >= effectiveDuration - 2.0 {
             delegate?.handlePlaybackEnd()
             return

@@ -6,6 +6,9 @@
 //
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 public actor YouTubeClient {
     let network: NetworkClient
@@ -175,7 +178,7 @@ public actor YouTubeClient {
             )
 
             if let fallbackData = try? await androidNetwork.get("search", body: ["query": normalizedQuery]) {
-                YouTubeDebugLogger.log("search fallback used Android client for query=\"\(normalizedQuery)\"")
+                YouTubeLog.debug("search fallback used Android client for query=\"\(normalizedQuery)\"")
                 return parseContinuationResults(from: fallbackData)
             }
 
@@ -194,7 +197,7 @@ public actor YouTubeClient {
 //        }
 //
 //        try? debugData.write(to: tempURL, options: .atomic)
-//        print("yt_search_debug client=\(clientName) saved=\(tempURL.path)")
+//        YouTubeLog.debug("yt_search_debug client=\(clientName) saved=\(tempURL.path)")
 //    }
 
     // MARK: - Video (SmartTubeIOS-style — no decipher)
@@ -242,9 +245,9 @@ public actor YouTubeClient {
             let audioCount = sd.adaptiveFormats.count(where: { $0.isAudioOnly && $0.playbackUrl != nil })
             let muxedCount = sd.formats.count(where: { $0.playbackUrl != nil })
             let hasHLS = sd.hlsManifestUrl != nil
-            print("[YouTubeSDK] iOS player result for \(id): audio=\(audioCount) muxed=\(muxedCount) hls=\(hasHLS) adaptive=\(sd.adaptiveFormats.count)")
+            YouTubeLog.debug("[YouTubeSDK] iOS player result for \(id): audio=\(audioCount) muxed=\(muxedCount) hls=\(hasHLS) adaptive=\(sd.adaptiveFormats.count)")
         } else {
-            print("[YouTubeSDK] iOS player: NO streamingData for \(id)")
+            YouTubeLog.debug("[YouTubeSDK] iOS player: NO streamingData for \(id)")
         }
 
         return video
@@ -281,9 +284,9 @@ public actor YouTubeClient {
             let audioCount = sd.adaptiveFormats.count(where: { $0.isAudioOnly && $0.playbackUrl != nil })
             let muxedCount = sd.formats.count(where: { $0.playbackUrl != nil })
             let hasHLS = sd.hlsManifestUrl != nil
-            print("[YouTubeSDK] Android player result for \(id): audio=\(audioCount) muxed=\(muxedCount) hls=\(hasHLS) adaptive=\(sd.adaptiveFormats.count)")
+            YouTubeLog.debug("[YouTubeSDK] Android player result for \(id): audio=\(audioCount) muxed=\(muxedCount) hls=\(hasHLS) adaptive=\(sd.adaptiveFormats.count)")
         } else {
-            print("[YouTubeSDK] Android player: NO streamingData for \(id)")
+            YouTubeLog.debug("[YouTubeSDK] Android player: NO streamingData for \(id)")
         }
 
         return video
@@ -317,7 +320,7 @@ public actor YouTubeClient {
         if let sd = video.streamingData {
             let muxedCount = sd.formats.count(where: { $0.playbackUrl != nil })
             let hasHLS = sd.hlsManifestUrl != nil
-            print("[YouTubeSDK] TV player result for \(id): muxed=\(muxedCount) hls=\(hasHLS)")
+            YouTubeLog.debug("[YouTubeSDK] TV player result for \(id): muxed=\(muxedCount) hls=\(hasHLS)")
         }
 
         return video
@@ -339,7 +342,7 @@ public actor YouTubeClient {
 
          let poToken = await getPoToken(for: id)
          if let poToken = poToken {
-             print("DECIPHER ENGINE: Using poToken for video \(id)")
+             YouTubeLog.debug("DECIPHER ENGINE: Using poToken for video \(id)")
          }
 
          let body: [String: Any] = [
@@ -430,7 +433,7 @@ public actor YouTubeClient {
          let audio  = video.streamingData?.adaptiveFormats.filter { $0.isAudioOnly && $0.playbackUrl != nil }.count ?? 0
          let muxed  = video.streamingData?.formats.filter { $0.playbackUrl != nil }.count ?? 0
          let hasHLS = video.streamingData?.hlsManifestUrl != nil
-         print("DECIPHER ENGINE: \(label) merged — audio=\(audio) muxed=\(muxed) hls=\(hasHLS)")
+         YouTubeLog.debug("DECIPHER ENGINE: \(label) merged — audio=\(audio) muxed=\(muxed) hls=\(hasHLS)")
      }
 
      private func hasPlayableStreams(_ video: YouTubeVideo) -> Bool {

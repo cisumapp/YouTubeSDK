@@ -47,15 +47,15 @@ public final class SearchViewModel {
     /// Call from `.task(id: query)` in the view to debounce live suggestions.
     /// When `q` is empty, restores the recommended terms immediately.
     public func updateSuggestions(for q: String) async {
-        print("[Suggestions] updateSuggestions called, q='\(q)'")
+        YouTubeLog.debug("[Suggestions] updateSuggestions called, q='\(q)'")
         if q.isEmpty {
-            print("[Suggestions] Empty query — restoring recommendedTerms")
+            YouTubeLog.debug("[Suggestions] Empty query — restoring recommendedTerms")
             suggestions = Self.recommendedTerms
             return
         }
         try? await Task.sleep(for: .milliseconds(300))
         guard !Task.isCancelled else {
-            print("[Suggestions] Task cancelled before fetch")
+            YouTubeLog.debug("[Suggestions] Task cancelled before fetch")
             return
         }
         fetchSuggestions(for: q)
@@ -142,20 +142,20 @@ public final class SearchViewModel {
     }
 
     private func fetchSuggestions(for query: String) {
-        print("[Suggestions] fetchSuggestions spawning task for q='\(query)'")
+        YouTubeLog.debug("[Suggestions] fetchSuggestions spawning task for q='\(query)'")
         suggestTask?.cancel()
         suggestTask = Task {
             do {
                 let s = try await api.fetchSearchSuggestions(query: query)
                 guard !Task.isCancelled else {
-                    print("[Suggestions] Task cancelled after fetch")
+                    YouTubeLog.debug("[Suggestions] Task cancelled after fetch")
                     return
                 }
                 let result = s.isEmpty ? Self.recommendedTerms : s
-                print("[Suggestions] Setting \(result.count) suggestions")
+                YouTubeLog.debug("[Suggestions] Setting \(result.count) suggestions")
                 suggestions = result
             } catch {
-                print("[Suggestions] fetchSearchSuggestions threw: \(error)")
+                YouTubeLog.debug("[Suggestions] fetchSearchSuggestions threw: \(error)")
                 if !Task.isCancelled { suggestions = Self.recommendedTerms }
             }
         }

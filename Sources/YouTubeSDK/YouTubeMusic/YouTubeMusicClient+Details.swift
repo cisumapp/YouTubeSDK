@@ -15,7 +15,7 @@ public extension YouTubeMusicClient {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw URLError(.cannotParseResponse)
         }
-        let sections = await parseSections(from: json)
+        let sections = parseSections(from: json)
         return YouTubeMusicArtistDetail(id: browseId, sections: sections)
     }
 
@@ -23,7 +23,7 @@ public extension YouTubeMusicClient {
     func getAlbum(browseId: String) async throws -> [YouTubeMusicSong] {
         let body = ["browseId": browseId]
         let data = try await network.get("browse", body: body)
-        return await parseMusicItems(from: data)
+        return parseMusicItems(from: data)
     }
 
     /// Fetches Playlist details (Tracks)
@@ -31,6 +31,6 @@ public extension YouTubeMusicClient {
         let browseId = browseId.hasPrefix("PL") ? "VL\(browseId)" : browseId
         let body = ["browseId": browseId]
         let data = try await network.get("browse", body: body)
-        return await parseMusicItems(from: data)
+        return parseMusicItems(from: data)
     }
 }

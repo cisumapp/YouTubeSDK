@@ -1,6 +1,13 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(JavaScriptCore)
 import JavaScriptCore
+#endif
+#if canImport(os)
 import os.log
+#endif
 
 /// A unified resolver that solves YouTube's JavaScript-based challenges (n-parameter and signature cipher).
 ///
@@ -242,6 +249,7 @@ public actor YouTubeJSResolver {
         scrambled: String,
         type: String
     ) -> String? {
+#if canImport(JavaScriptCore)
         let ctx = JSContext()!
         var jsError: String?
         ctx.exceptionHandler = { _, e in jsError = e?.toString() }
@@ -287,13 +295,16 @@ public actor YouTubeJSResolver {
 
         let result = ctx.evaluateScript(script)
         if let err = jsError {
-            print("❌ [JSResolver/fast] exception: \(err)")
+            YouTubeLog.debug(" [JSResolver/fast] exception: \(err)")
         }
         let solved = result?.toString()
         guard let s = solved, !s.isEmpty, s != "null", s != "undefined", s != scrambled else {
             return nil
         }
         return s
+#else
+        return nil
+#endif
     }
 
     // MARK: - Slow path: full AST parse + solver extraction
@@ -308,6 +319,7 @@ public actor YouTubeJSResolver {
         libCode: String,
         coreCode: String
     ) -> (solved: String?, extractedSolver: String?) {
+#if canImport(JavaScriptCore)
         let context = JSContext()!
         var jsError: String?
         context.exceptionHandler = { _, e in jsError = e?.toString() }
@@ -347,7 +359,7 @@ public actor YouTubeJSResolver {
         let resultObj = context.evaluateScript(script)
 
         if let err = jsError {
-            print("❌ [JSResolver/slow] exception: \(err)")
+            YouTubeLog.debug(" [JSResolver/slow] exception: \(err)")
         }
 
         let solved: String? = {
@@ -370,6 +382,9 @@ public actor YouTubeJSResolver {
         )
 
         return (solved, finalSolver)
+#else
+        return (nil, nil)
+#endif
     }
 
     /// Extracts the raw solver function source from player.js using yt-dlp-compatible

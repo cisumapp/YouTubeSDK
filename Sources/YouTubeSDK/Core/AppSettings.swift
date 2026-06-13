@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(SwiftUI)
 import SwiftUI
+#endif
 
 // MARK: - AppSettings
 
@@ -189,6 +191,7 @@ public struct AppSettings: Codable {
         case dark = "Dark"
         case light = "Light"
 
+#if canImport(SwiftUI)
         public var colorScheme: ColorScheme? {
             switch self {
             case .system: nil
@@ -196,6 +199,7 @@ public struct AppSettings: Codable {
             case .light: .light
             }
         }
+#endif
     }
 
     // MARK: Defaults

@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(SwiftUI)
+import SwiftUI
+#endif
 
 // MARK: - CurrentQueueStore
 
@@ -72,7 +75,21 @@ public actor CurrentQueueStore: UserDefaultsBackedStore {
 
     /// Moves a video — same semantics as `Array.move(fromOffsets:toOffset:)` used by SwiftUI List.
     public func move(from source: IndexSet, to destination: Int) {
+#if canImport(SwiftUI)
         videos.move(fromOffsets: source, toOffset: destination)
+#else
+        let elementsToMove = source.map { videos[$0] }
+        for idx in source.sorted(by: >) {
+            videos.remove(at: idx)
+        }
+        var insertPos = destination
+        for idx in source {
+            if idx < destination {
+                insertPos -= 1
+            }
+        }
+        videos.insert(contentsOf: elementsToMove, at: insertPos)
+#endif
         persist()
     }
 

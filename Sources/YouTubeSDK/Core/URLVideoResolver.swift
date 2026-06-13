@@ -1,7 +1,12 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
+#if canImport(os)
 import os
+#endif
 
-private let resolverLog = Logger(subsystem: "com.void.smarttube", category: "URLInternalVideoResolver")
+private let PerfLog = Logger(subsystem: "com.void.smarttube", category: "URLInternalVideoResolver")
 
 // MARK: - URLInternalVideoResolver
 
@@ -54,29 +59,29 @@ public actor URLInternalVideoResolver {
     ///   the closure for UI updates.
     /// - Returns: The video ID string, or `nil` if none was found.
     public func resolve(url: URL, onProgress: (@Sendable (String) -> Void)? = nil) async -> String? {
-        resolverLog.notice("resolve: \(url.absoluteString, privacy: .public)")
+        PerfLog.notice("resolve: \(url.absoluteString)")
 
         // Step 1 — Direct parse (no network)
         if let id = YouTubeLinkHandler.videoID(from: url) {
-            resolverLog.notice("step1 hit: \(id, privacy: .public)")
+            PerfLog.notice("step1 hit: \(id)")
             return id
         }
 
         // Step 2 — HEAD redirect chain
         onProgress?("Following redirect links\u{2026}")
         if let id = await followRedirects(from: url, onProgress: onProgress) {
-            resolverLog.notice("step2 hit: \(id, privacy: .public)")
+            PerfLog.notice("step2 hit: \(id)")
             return id
         }
 
         // Step 3 — Page scrape
         onProgress?("Scanning page for video links\u{2026}")
         if let id = await scrape(url: url) {
-            resolverLog.notice("step3 hit: \(id, privacy: .public)")
+            PerfLog.notice("step3 hit: \(id)")
             return id
         }
 
-        resolverLog.notice("no video ID found")
+        PerfLog.notice("no video ID found")
         return nil
     }
 
@@ -86,7 +91,7 @@ public actor URLInternalVideoResolver {
         var current = startURL
         for hop in 1 ... URLInternalVideoResolver.maxRedirects {
             guard isHTTP(current) else {
-                resolverLog.notice("hop\(hop, privacy: .public) non-http scheme — stopping")
+                PerfLog.notice("hop\(hop) non-http scheme — stopping")
                 return nil
             }
 
@@ -95,7 +100,7 @@ public actor URLInternalVideoResolver {
             request.setValue("SmartTube/1.0", forHTTPHeaderField: "User-Agent")
 
             guard let (_, response) = try? await session.data(for: request) else {
-                resolverLog.notice("hop\(hop, privacy: .public) request failed")
+                PerfLog.notice("hop\(hop) request failed")
                 return nil
             }
 
@@ -112,16 +117,16 @@ public actor URLInternalVideoResolver {
                   let next = URL(string: location, relativeTo: current)?.absoluteURL
             else {
                 // Not a redirect — we've reached the final URL; step 3 will scrape it.
-                resolverLog.notice("hop\(hop, privacy: .public) final URL: \(landed.absoluteString, privacy: .public)")
+                PerfLog.notice("hop\(hop) final URL: \(landed.absoluteString)")
                 return nil
             }
 
-            resolverLog.notice("hop\(hop, privacy: .public) → \(next.absoluteString, privacy: .public)")
+            PerfLog.notice("hop\(hop) → \(next.absoluteString)")
             onProgress?("  ↳ \(next.host ?? next.absoluteString)")
             if let id = YouTubeLinkHandler.videoID(from: next) { return id }
             current = next
         }
-        resolverLog.notice("maxRedirects exhausted")
+        PerfLog.notice("maxRedirects exhausted")
         return nil
     }
 
@@ -140,7 +145,7 @@ public actor URLInternalVideoResolver {
         // Only parse text/html responses.
         let contentType = http.value(forHTTPHeaderField: "Content-Type") ?? ""
         guard contentType.lowercased().contains("text/html") else {
-            resolverLog.notice("scrape skipped — content-type: \(contentType, privacy: .public)")
+            PerfLog.notice("scrape skipped — content-type: \(contentType)")
             return nil
         }
 

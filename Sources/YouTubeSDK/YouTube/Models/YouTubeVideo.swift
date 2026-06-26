@@ -22,6 +22,32 @@ public struct YouTubeVideo: Codable, Identifiable, Sendable {
 
     public let captions: [CaptionTrack]?
 
+    /// Memberwise initializer for reconstructing a lightweight video from neutral metadata
+    /// (e.g. when the app carries a provider-agnostic media reference instead of the full object).
+    public init(
+        id: String,
+        title: String,
+        viewCount: String = "",
+        author: String,
+        channelId: String = "",
+        description: String = "",
+        lengthInSeconds: String = "",
+        thumbnailURL: String? = nil,
+        streamingData: StreamingData? = nil,
+        captions: [CaptionTrack]? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.viewCount = viewCount
+        self.author = author
+        self.channelId = channelId
+        self.description = description
+        self.lengthInSeconds = lengthInSeconds
+        self.thumbnailURL = thumbnailURL
+        self.streamingData = streamingData
+        self.captions = captions
+    }
+
     enum CodingKeys: String, CodingKey {
         case videoDetails
         case streamingData

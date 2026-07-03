@@ -50,9 +50,9 @@ public final class YouTubeWebViewHLSExtractor: NSObject {
     /// the `hlsManifestUrl` from that response.
     ///
     /// - Parameter videoId: The YouTube video ID.
-    /// - Parameter timeoutSeconds: How long to wait before giving up. Default 40 s.
+    /// - Parameter timeoutSeconds: How long to wait before giving up. Default 6 s.
     /// - Returns: The HLS master manifest URL (may include `spc=`), or `nil` on failure/timeout.
-    public func extractHLSURL(videoId: String, timeoutSeconds: Double = 40) async -> URL? {
+    public func extractHLSURL(videoId: String, timeoutSeconds: Double = 6) async -> URL? {
         // Cancel any pending extraction before starting a new one.
         finish(url: nil)
         extractedNSolver = nil
@@ -359,9 +359,9 @@ public final class YouTubeWebViewHLSExtractor: NSObject {
                     var hlsN = null, solvedN = null;
 
                     // Fallback timer: if async chain takes >20 s, send whatever we have.
-                    var fallbackTimer = setTimeout(function() {
+                    var fallbackTimer = setTimeout(function() { // ponytail: 5s (was 20s)
                         sendHLSURL(hlsUrl, poToken, 'apiResponse', hlsN, solvedN, playerID);
-                    }, 20000);
+                    }, 5000);
 
                     try {
                         // Step 1: Fetch the HLS master manifest to find a per-quality

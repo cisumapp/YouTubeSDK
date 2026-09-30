@@ -103,6 +103,17 @@ public struct PlayerInfo: Sendable {
     /// Used by YTHLSProxyLoader to rewrite the M3U8 playlist.
     public let nSolver: (unsolved: String, solved: String)?
 
+    /// Whether this response can actually be handed to AVPlayer.
+    ///
+    /// Single definition of "playable" for the whole resolver chain. The steps used to
+    /// disagree — some accepted only `hlsURL`, others accepted any non-empty `formats`
+    /// list — which meant a client could return a valid progressive response and still
+    /// be discarded as a failure, surfacing to the user as "streaming failed after
+    /// trying all clients".
+    public var isPlayable: Bool {
+        preferredStreamURL != nil
+    }
+
     /// The best stream URL to hand to AVPlayer.
     /// Prefers HLS (works natively in AVPlayer on iOS, handles adaptive quality).
     /// Falls back to combined muxed mp4 for non-HLS responses.

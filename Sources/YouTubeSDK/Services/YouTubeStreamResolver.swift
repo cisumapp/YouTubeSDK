@@ -46,6 +46,15 @@ public actor YouTubeStreamResolver {
 
         let resolutionStart = Date()
 
+        // 0. Pre-fetch signatureTimestamp + playerID once per session.
+        //
+        // Without a playerID, `descrambleURL` returns every URL with its raw `/n=`
+        // token, the CDN answers 403, and playback fails with "You do not have
+        // permission to access the requested resource" — a resolve that reported
+        // success and then could not play. Doing it here rather than inside the smart
+        // chain means the Android attempt below is covered too.
+        _ = await activeAPI.fetchSignatureTimestampIfNeeded()
+
         // 1. Try unauthenticated Android client directly (often provides muxed 360p/720p).
         // This provides the fastest possible Time-To-First-Byte because it skips complex
         // resolution flows and returns a format playable without HLS assembly.
@@ -119,5 +128,4 @@ public actor YouTubeStreamResolver {
         if preferAudio, info.bestAdaptiveAudioURL != nil { return true }
         if info.bestMuxedDownloadURL != nil { return true }
         return false
-    }
-}
+    }}

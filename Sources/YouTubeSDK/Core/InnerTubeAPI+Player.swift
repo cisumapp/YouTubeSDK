@@ -79,40 +79,52 @@ public extension InnerTubeAPI {
             return iosResult
         }
         // If neither returned HLS but one has formats, prefer that
-        if let webResult, !webResult.formats.isEmpty {
+        if let webResult, webResult.isPlayable {
             tubeLog.notice("fetchPlayerInfoSmart:  WebSafari (formats) hit for \(videoId)")
             return webResult
         }
-        if let iosResult, !iosResult.formats.isEmpty {
+        if let iosResult, iosResult.isPlayable {
             tubeLog.notice("fetchPlayerInfoSmart:  iOS-Auth (formats) hit for \(videoId)")
             return iosResult
         }
 
         // 3. Try promising unauthenticated clients in parallel
-        // (TVEmbedded, MWEB, AndroidVR) — return the first one that provides HLS.
+        // (TVEmbedded, MWEB, AndroidVR).
+        //
+        // Accept any *playable* result, not just one carrying an HLS manifest. These
+        // clients frequently answer `playabilityStatus: OK` with a full progressive
+        // format list and no `hlsManifestUrl`; requiring HLS threw those away and then
+        // reported "All high-quality clients failed" while a perfectly good 24-format
+        // response was sitting in hand. HLS is still preferred — it is checked first
+        // once every task has reported in.
         tubeLog.notice("fetchPlayerInfoSmart: trying parallel unauthenticated fallbacks for \(videoId)")
-        let parallelInfo: PlayerInfo? = await withTaskGroup(of: PlayerInfo?.self) { group in
+        let parallelResults: [PlayerInfo] = await withTaskGroup(of: PlayerInfo?.self) { group in
             group.addTask { try? await self.fetchPlayerInfoTVEmbedded(videoId: videoId) }
             group.addTask { try? await self.fetchPlayerInfoMWEB(videoId: videoId) }
             group.addTask { try? await self.fetchPlayerInfoAndroidVR(videoId: videoId) }
 
+            var collected: [PlayerInfo] = []
             for await info in group {
-                if let info, info.hlsURL != nil {
-                    return info as PlayerInfo?
-                }
+                if let info, info.isPlayable { collected.append(info) }
             }
-            return nil as PlayerInfo?
+            return collected
         }
-        if let parallelInfo {
-            tubeLog.notice("fetchPlayerInfoSmart:  Parallel fallback successful for \(videoId)")
-            return parallelInfo
+        if let hlsHit = parallelResults.first(where: { $0.hlsURL != nil }) {
+            tubeLog.notice("fetchPlayerInfoSmart:  Parallel fallback (HLS) successful for \(videoId)")
+            return hlsHit
+        }
+        if let progressiveHit = parallelResults.first {
+            tubeLog.notice(
+                "fetchPlayerInfoSmart:  Parallel fallback (progressive, \(progressiveHit.formats.count) formats) successful for \(videoId)"
+            )
+            return progressiveHit
         }
 
         // 4. Try TV Authenticated (Fallback for auth-required / age-restricted content)
         if authToken != nil {
             do {
                 let info = try await fetchPlayerInfoAuthenticated(videoId: videoId)
-                if info.hlsURL != nil || !info.formats.isEmpty {
+                if info.isPlayable {
                     tubeLog.notice("fetchPlayerInfoSmart:  TVAuth hit for \(videoId)")
                     return info
                 }
@@ -125,7 +137,7 @@ public extension InnerTubeAPI {
         // 5. Try TVHTML5_SIMPLY_EMBEDDED (Previously reliable, currently unstable)
         do {
             let info = try await fetchPlayerInfoTVEmbeddedSimply(videoId: videoId)
-            if info.hlsURL != nil {
+            if info.isPlayable {
                 tubeLog.notice("fetchPlayerInfoSmart:  TVEmbeddedSimply hit for \(videoId)")
                 return info
             }
@@ -138,7 +150,7 @@ public extension InnerTubeAPI {
         if authToken != nil {
             do {
                 let info = try await fetchPlayerInfoWebCreator(videoId: videoId)
-                if !info.formats.isEmpty {
+                if info.isPlayable {
                     tubeLog.notice("fetchPlayerInfoSmart:  WebCreator hit for \(videoId) (Adaptive only)")
                     return info
                 }
@@ -151,7 +163,7 @@ public extension InnerTubeAPI {
         // 7. Try Android (Muxed formats fallback)
         do {
             let info = try await fetchPlayerInfoAndroid(videoId: videoId)
-            if !info.formats.isEmpty {
+            if info.isPlayable {
                 tubeLog.notice("fetchPlayerInfoSmart:  Android hit for \(videoId) (Muxed formats)")
                 return info
             }
@@ -257,10 +269,31 @@ public extension InnerTubeAPI {
     /// `c=ANDROID` and are reliably downloadable with a standard Android UA.
     /// Unlike TVHTML5-signed URLs, these do not require session cookies.
     func fetchPlayerInfoAndroid(videoId: String) async throws -> PlayerInfo {
+        // The playerID is what makes n-descrambling possible, and Android returns
+        // progressive URLs carrying a raw `/n=` token. Without a playerID,
+        // `descrambleURL` returns the URL untouched, the CDN answers 403, and the
+        // caller reports "You do not have permission to access the requested
+        // resource" — i.e. a resolve that *succeeded* still cannot play.
+        //
+        // `fetchSignatureTimestampIfNeeded` also populates `playerID` and is cached for
+        // an hour, so this costs one homepage fetch per session, not per resolve.
+        // Android is the resolver's first attempt, so this has to live here rather than
+        // in the smart chain where it used to be.
+        _ = await fetchSignatureTimestampIfNeeded()
+
         var body = makeBody(client: androidClientContext)
         body["videoId"] = videoId
         body["racyCheckOk"] = true
         body["contentCheckOk"] = true
+
+        // Mirrors `fetchPlayerInfoAndroidVR`: without html5Preference YouTube answers
+        // with SABR-only URLs that AVPlayer cannot consume.
+        var cpbc: [String: Any] = ["html5Preference": "HTML5_PREF_WANTS"]
+        if let sts = await fetchSignatureTimestampIfNeeded() {
+            cpbc["signatureTimestamp"] = sts
+        }
+        body["playbackContext"] = ["contentPlaybackContext": cpbc]
+
         let data = try await postAndroid(endpoint: "player", body: body)
         return try await parsePlayerInfo(from: data, videoId: videoId)
     }

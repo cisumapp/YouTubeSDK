@@ -45,6 +45,29 @@ public actor YouTubeMusicClient {
         return []
     }
 
+    /// Search restricted to the "Songs" shelf: catalogue tracks, which are the label's audio uploads.
+    ///
+    /// Unlike `search(_:)` there is no generic-YouTube fallback. That fallback returns arbitrary
+    /// video uploads, which is exactly what matching a known song must never pick. An empty songs
+    /// result falls back to the unfiltered music search only, whose results still carry
+    /// `videoType` so the caller can tell a music video from the audio.
+    public func searchSongs(_ query: String) async throws -> [YouTubeMusicSong] {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else { return [] }
+
+        let data = try await network.get("search", body: ["query": normalizedQuery, "params": Self.songsFilterParams])
+        let songs = parseMusicItems(from: data)
+        if !songs.isEmpty {
+            return songs
+        }
+
+        let fallback = try await network.get("search", body: ["query": normalizedQuery])
+        return parseMusicItems(from: fallback)
+    }
+
+    /// The protobuf-encoded filter YouTube Music's own web client sends for the "Songs" chip.
+    static let songsFilterParams = "EgWKAQIIAWoMEA4QChADEAQQCRAF"
+
     private func searchViaYouTube(_ query: String) async throws -> [YouTubeMusicSong] {
         let youtube = YouTubeClient(cookies: cookies, accessToken: accessToken)
         let continuation = try await youtube.search(query)

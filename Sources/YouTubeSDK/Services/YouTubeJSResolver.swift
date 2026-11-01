@@ -80,6 +80,53 @@ public actor YouTubeJSResolver {
         return replacing(n: scrambled, with: descrambled, in: url)
     }
 
+    // MARK: - Public (batch)
+
+    /// Solves every challenge one player response carries in a single EJS pass, filling the cache.
+    ///
+    /// Call before the per-format `resolveSignatureCipher` / `descrambleURL` calls, which then hit
+    /// the cache. Without this, each format starts its own solve; the actor is reentrant across the
+    /// detached JS work, so a 25-format response ran ~25 full player.js parses at once and a
+    /// resolve took 8–15 s whether or not player.js was already downloaded.
+    ///
+    /// Best effort: anything left unsolved falls through to the per-format path as before.
+    public func prepare(playerID: String, ciphers: [String], urls: [URL]) async {
+        var sigs = Set<String>()
+        var ns = Set<String>()
+        for cipher in ciphers {
+            let params = parseCipherString(cipher)
+            if let s = params["s"] { sigs.insert(s) }
+            if let url = params["url"].flatMap(URL.init(string:)), let n = extractNParam(from: url) {
+                ns.insert(n)
+            }
+        }
+        for url in urls {
+            if let n = extractNParam(from: url) { ns.insert(n) }
+        }
+        sigs = sigs.filter { solvedCache["\(playerID):sig:\($0)"] == nil }
+        ns = ns.filter { solvedCache["\(playerID):n:\($0)"] == nil }
+        guard !sigs.isEmpty || !ns.isEmpty else { return }
+
+        guard let playerJS = await ensurePlayerJS(playerID: playerID),
+              let (libCode, coreCode) = try? await getSolverScripts()
+        else { return }
+
+        let start = Date()
+        let (sigList, nList) = (Array(sigs), Array(ns))
+        let solved = await Task.detached(priority: .userInitiated) {
+            Self.evaluateBatch(sigs: sigList, ns: nList, playerJS: playerJS, libCode: libCode, coreCode: coreCode)
+        }.value
+
+        for (scrambled, value) in solved.sig {
+            solvedCache["\(playerID):sig:\(scrambled)"] = value
+        }
+        for (scrambled, value) in solved.n {
+            solvedCache["\(playerID):n:\(scrambled)"] = value
+        }
+        let elapsed = Int(Date().timeIntervalSince(start) * 1000)
+        log.notice("batch-solve (\(playerID as NSString)): sig \(solved.sig.count)/\(sigList.count), n \(solved.n.count)/\(nList.count) in \(elapsed)ms")
+    }
+
     /// Solves the n-challenge for a given playerID and scrambled value.
     public func solveN(playerID: String, n: String) async -> String? {
         let cacheKey = "\(playerID):n:\(n)"
@@ -384,6 +431,53 @@ public actor YouTubeJSResolver {
         return (solved, finalSolver)
 #else
         return (nil, nil)
+#endif
+    }
+
+    /// One EJS `jsc` call carrying every n and sig challenge: one player.js parse for all of them.
+    private nonisolated static func evaluateBatch(
+        sigs: [String],
+        ns: [String],
+        playerJS: String,
+        libCode: String,
+        coreCode: String
+    ) -> (sig: [String: String], n: [String: String]) {
+#if canImport(JavaScriptCore)
+        let context = JSContext()!
+        context.evaluateScript("var window = this; var globalThis = this; var self = this;")
+        context.evaluateScript(libCode)
+        context.evaluateScript("var meriyah = lib.meriyah; var astring = lib.astring;")
+        context.evaluateScript(coreCode)
+        context.setObject(playerJS, forKeyedSubscript: "playerJSContent" as NSString)
+        context.setObject(sigs, forKeyedSubscript: "sigChallenges" as NSString)
+        context.setObject(ns, forKeyedSubscript: "nChallenges" as NSString)
+
+        let script = """
+        (function() {
+            try {
+                var requests = [];
+                if (nChallenges.length) requests.push({type:'n', challenges:nChallenges});
+                if (sigChallenges.length) requests.push({type:'sig', challenges:sigChallenges});
+                var r = jsc({type:'player', player:playerJSContent, requests:requests});
+                var out = {n:{}, sig:{}};
+                for (var i = 0; i < requests.length; i++) {
+                    var data = r && r.responses && r.responses[i] && r.responses[i].data;
+                    if (!data) continue;
+                    for (var k in data) {
+                        if (typeof data[k] === 'string' && data[k].length > 0 && data[k] !== k) out[requests[i].type][k] = data[k];
+                    }
+                }
+                return JSON.stringify(out);
+            } catch(e) { return null; }
+        })()
+        """
+        guard let json = context.evaluateScript(script)?.toString(),
+              let data = json.data(using: .utf8),
+              let decoded = try? JSONDecoder().decode([String: [String: String]].self, from: data)
+        else { return ([:], [:]) }
+        return (decoded["sig"] ?? [:], decoded["n"] ?? [:])
+#else
+        return ([:], [:])
 #endif
     }
 

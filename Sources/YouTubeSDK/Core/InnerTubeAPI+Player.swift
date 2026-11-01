@@ -113,6 +113,16 @@ public extension InnerTubeAPI {
             tubeLog.notice("fetchPlayerInfoSmart:  Parallel fallback (HLS) successful for \(videoId)")
             return hlsHit
         }
+        // Prefer a client whose audio-only URL the CDN actually serves. Being first to answer says
+        // nothing about that: Android VR answers fastest and its `rqh=1` URLs are refused outright,
+        // which made a fast resolve hand AVPlayer three unplayable candidates.
+        // ponytail: sequential probes, ≤3 × one round trip; probe concurrently if it shows up.
+        for info in parallelResults {
+            if let audio = info.bestAdaptiveAudioURL, await Self.streamResponds(audio) {
+                tubeLog.notice("fetchPlayerInfoSmart:  Parallel fallback (audio verified, \(info.formats.count) formats) successful for \(videoId)")
+                return info
+            }
+        }
         if let progressiveHit = parallelResults.first {
             tubeLog.notice(
                 "fetchPlayerInfoSmart:  Parallel fallback (progressive, \(progressiveHit.formats.count) formats) successful for \(videoId)"
@@ -324,6 +334,40 @@ public extension InnerTubeAPI {
         body["contentCheckOk"] = true
         body["playbackContext"] = ["contentPlaybackContext": cpbc]
         let data = try await postAndroidVR(body: body)
+        return try await parsePlayerInfo(from: data, videoId: videoId)
+    }
+
+    /// Fetches player info using the VISIONOS (Apple Vision Pro) client — nameID 101.
+    ///
+    /// This is the client `streamCatalog` tries first, because it is currently the only
+    /// one in the SDK that hands back progressive stream URLs the CDN will serve in
+    /// full. The iOS-family clients (IOS, MWEB, ANDROID_VR) return 403 past roughly the
+    /// first fifth of `contentLength` regardless of range shape, User-Agent or PO-token
+    /// state; VISIONOS URLs serve every byte including the last.
+    ///
+    /// Request shape follows `fetchPlayerInfoAndroidVR`, which is the closest analogue:
+    /// `REQUIRE_JS_PLAYER` is false so URLs arrive pre-signed (no `n` descramble), and
+    /// yt-dlp's `_generate_player_context` adds `html5Preference` + `signatureTimestamp`
+    /// for every client, not just Android.
+    ///
+    /// No PO token is attached. This client declares no GVS PO-token policy, and a
+    /// `pot=` on the returned URLs is neither present nor needed — adding one here would
+    /// be guessing at enforcement that does not apply.
+    func fetchPlayerInfoVisionOS(videoId: String) async throws -> PlayerInfo {
+        var clientFields = (visionOSClientContext["client"] as? [String: Any]) ?? [:]
+        if let vd = visitorData { clientFields["visitorData"] = vd }
+
+        let sts = await fetchSignatureTimestampIfNeeded()
+        var cpbc: [String: Any] = ["html5Preference": "HTML5_PREF_WANTS"]
+        if let sts { cpbc["signatureTimestamp"] = sts }
+
+        var body = makeBody(client: ["client": clientFields])
+        body["videoId"] = videoId
+        body["racyCheckOk"] = true
+        body["contentCheckOk"] = true
+        body["playbackContext"] = ["contentPlaybackContext": cpbc]
+
+        let data = try await postVisionOS(body: body)
         return try await parsePlayerInfo(from: data, videoId: videoId)
     }
 
@@ -788,6 +832,17 @@ public extension InnerTubeAPI {
             }
         }
 
+        // Every sig and n challenge in this response, solved in one player.js parse. The per-format
+        // calls below then read the cache instead of each starting a parse of their own.
+        if let pid {
+            await YouTubeJSResolver.shared.prepare(
+                playerID: pid,
+                ciphers: uniqueRawFormats.compactMap { $0.urlStr == nil ? $0.cipher : nil },
+                urls: uniqueRawFormats.compactMap { $0.urlStr.flatMap(URL.init(string:)) }
+                    + [(streamingData?["hlsManifestUrl"] as? String).flatMap(URL.init(string:))].compactMap { $0 }
+            )
+        }
+
         let uniqueFormats = await withTaskGroup(of: InternalVideoFormat?.self) { group in
             for f in uniqueRawFormats {
                 group.addTask {
@@ -1104,5 +1159,27 @@ extension Array {
             try await results.append(transform(element))
         }
         return results
+    }
+}
+
+extension InnerTubeAPI {
+    /// Whether the CDN serves `url` to this client all the way through, with the signing client's
+    /// User-Agent.
+    ///
+    /// Reads the file's **last** two bytes (from the URL's `clen`). The CDN serves anonymous IOS,
+    /// MWEB and ANDROID_VR URLs only up to roughly the first fifth of the file, with or without a PO
+    /// token (measured in the yt CLI, `docs/downloader-validation.md`), so a probe near the start
+    /// passes for URLs that 403 a few seconds into playback. Without `clen`, 1 MB in.
+    static func streamResponds(_ url: URL) async -> Bool {
+        let length = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == "clen" }?.value.flatMap { Int64($0) }
+        let range = length.map { "bytes=\(max(0, $0 - 2))-\($0 - 1)" } ?? "bytes=1048576-1048577"
+        var request = URLRequest(url: url, timeoutInterval: 3)
+        request.setValue(range, forHTTPHeaderField: "Range")
+        request.setValue(InnerTubeClients.userAgent(forStreamURL: url), forHTTPHeaderField: "User-Agent")
+        guard let (_, response) = try? await URLSession.shared.data(for: request),
+              let status = (response as? HTTPURLResponse)?.statusCode
+        else { return false }
+        return (200..<300).contains(status)
     }
 }

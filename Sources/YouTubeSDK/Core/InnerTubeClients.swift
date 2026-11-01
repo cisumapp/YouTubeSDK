@@ -7,6 +7,28 @@ import Foundation
 // Used by InnerTubeAPI (request bodies + headers) and InternalAuthService (TV context body).
 
 public enum InnerTubeClients {
+    /// The User-Agent the CDN expects for a stream URL: the one of the client that signed it.
+    ///
+    /// googlevideo URLs name their client in `c=` (query, or a `/c/<name>/` path segment on HLS),
+    /// and a request carrying another client's User-Agent is refused with 403.
+    public static func userAgent(forStreamURL url: URL) -> String {
+        let fromQuery = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+            .queryItems?.first { $0.name == "c" }?.value
+        let path = url.pathComponents
+        let fromPath = path.firstIndex(of: "c").flatMap { $0 + 1 < path.count ? path[$0 + 1] : nil }
+        switch (fromQuery ?? fromPath)?.uppercased() {
+        case "ANDROID": return Android.userAgent
+        case "ANDROID_VR": return AndroidVR.userAgent
+        case "VISIONOS": return VisionOS.userAgent
+        case "IOS": return iOS.userAgent
+        case "MWEB": return MWEB.userAgent
+        case "TVHTML5": return TV.userAgent
+        case "TVHTML5_SIMPLY": return TVEmbeddedSimply.userAgent
+        case "TVHTML5_SIMPLY_EMBEDDED_PLAYER": return TVEmbedded.userAgent
+        default: return WebSafari.userAgent
+        }
+    }
+
     public enum Web {
         public static let name = "WEB"
         public static let nameID = "1"
@@ -57,6 +79,33 @@ public enum InnerTubeClients {
         public static let version = "1.65.10"
         /// eureka-user build string matches yt-dlp's android_vr UA exactly (May 2026).
         public static let userAgent = "com.google.android.apps.youtube.vr.oculus/\(version) (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip"
+    }
+
+    /// Vision Pro client (Apple Vision Pro identity) — the preferred client for
+    /// *downloadable* progressive stream URLs.
+    ///
+    /// Unlike IOS / MWEB / ANDROID_VR, this client declares **no GVS PO-token policy**
+    /// in yt-dlp, and the URLs it produces carry no `pot=` parameter. Measured on
+    /// 2026-10-06 against `XUQShTrFlyM`: the iOS-family clients cap a progressive
+    /// rendition at roughly the first 21% of `contentLength` (403 past it, for every
+    /// range shape, User-Agent and token state tried), whereas VISIONOS URLs serve the
+    /// whole file — including the final byte. See `docs/downloader-validation.md`.
+    ///
+    /// `REQUIRE_JS_PLAYER` is false, so URLs arrive pre-signed and no `n` descramble is
+    /// needed, matching ANDROID_VR.
+    ///
+    /// Constants mirror yt-dlp's `visionos` INNERTUBE_CONTEXT (yt-dlp 2026.08.19,
+    /// `extractor/youtube/_base.py`), which lists `visionos` as a default client.
+    public enum VisionOS {
+        public static let name = "VISIONOS"
+        public static let nameID = "101"
+        public static let version = "1.02"
+        public static let deviceMake = "Apple"
+        public static let deviceModel = "RealityDevice17,1"
+        public static let osName = "visionOS"
+        public static let osVersion = "26.5.23O471"
+        public static let userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) "
+            + "AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15"
     }
 
     /// Web Embedded Player client — the current YouTube iframe embedded player.

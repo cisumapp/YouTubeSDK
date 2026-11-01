@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(os)
+import os
+#endif
 
 public enum YouTubeLog {
     public enum Level: Int, Comparable {
@@ -41,17 +44,24 @@ public enum YouTubeLog {
         log(message(), level: .error, file: file, function: function, line: line)
     }
 
-    @usableFromInline static func currentCPUTimeMs() -> Double {
-        var spec = timespec()
-        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &spec)
-        return Double(spec.tv_sec) * 1000.0 + Double(spec.tv_nsec) / 1_000_000.0
-    }
 
     @usableFromInline static func log(_ message: @autoclosure () -> String, level: Level, file: String, function: String, line: Int) {
         guard level >= minLevel else { return }
         let fileName = (file as NSString).lastPathComponent
-        let cpuTime = String(format: "%.2f", currentCPUTimeMs())
-        print("[\(cpuTime)] [\(fileName):\(line) | \(function)] \(message())")
+        let text = "[\(fileName):\(line) \(function)] \(message())"
+        #if canImport(os)
+        // The unified log rather than stdout: `print` never reaches Console.app or `log show`.
+        // Messages are written to keep URLs and tokens out, so they are logged as public.
+        let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "cisum", category: "YouTubeSDK")
+        switch level {
+        case .trace, .debug: logger.debug("\(text, privacy: .public)")
+        case .info: logger.notice("\(text, privacy: .public)")
+        case .warning: logger.warning("\(text, privacy: .public)")
+        case .error: logger.error("\(text, privacy: .public)")
+        }
+        #else
+        print(text)
+        #endif
     }
 }
 

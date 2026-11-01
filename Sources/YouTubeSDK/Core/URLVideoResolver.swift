@@ -6,7 +6,7 @@ import FoundationNetworking
 import os
 #endif
 
-private let PerfLog = Logger(subsystem: "com.void.smarttube", category: "URLInternalVideoResolver")
+private let PerfLog = Logger(subsystem: appSubsystem, category: "URLInternalVideoResolver")
 
 // MARK: - URLInternalVideoResolver
 

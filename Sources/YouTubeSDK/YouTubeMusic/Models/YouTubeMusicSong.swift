@@ -17,12 +17,49 @@ public struct YouTubeMusicSong: Identifiable, Sendable, Codable {
     public let videoId: String
     public let isExplicit: Bool
 
+    /// What kind of upload this is, from YouTube Music's own `musicVideoType`.
+    ///
+    /// The one field that separates the official audio from the music video (intro skits, outros)
+    /// and from user uploads. `nil` when the payload carried no type — not a guess either way.
+    public let videoType: VideoType?
+
+    public enum VideoType: String, Sendable, Codable {
+        /// `MUSIC_VIDEO_TYPE_ATV`: the label's audio track, the album master.
+        case officialAudio = "MUSIC_VIDEO_TYPE_ATV"
+        /// `MUSIC_VIDEO_TYPE_OMV`: the official music video, often a different edit.
+        case musicVideo = "MUSIC_VIDEO_TYPE_OMV"
+        /// `MUSIC_VIDEO_TYPE_UGC`: anyone's upload.
+        case userUpload = "MUSIC_VIDEO_TYPE_UGC"
+        /// `MUSIC_VIDEO_TYPE_PODCAST_EPISODE` and anything YouTube adds later.
+        case other
+
+        init(raw: String) {
+            self = VideoType(rawValue: raw) ?? .other
+        }
+
+        /// The first `musicVideoType` anywhere in a renderer. It sits under the play-button overlay
+        /// or the title run's watch endpoint depending on the shelf, so the search is not path-bound.
+        static func find(in value: Any) -> VideoType? {
+            if let dict = value as? [String: Any] {
+                if let raw = dict["musicVideoType"] as? String { return VideoType(raw: raw) }
+                for child in dict.values {
+                    if let found = find(in: child) { return found }
+                }
+            } else if let array = value as? [Any] {
+                for child in array {
+                    if let found = find(in: child) { return found }
+                }
+            }
+            return nil
+        }
+    }
+
     /// Helper for UI
     public var artistsDisplay: String {
         artists.joined(separator: ", ")
     }
 
-    public init(id: String, title: String, artists: [String], album: String?, duration: TimeInterval?, thumbnailURL: URL?, videoId: String, isExplicit: Bool) {
+    public init(id: String, title: String, artists: [String], album: String?, duration: TimeInterval?, thumbnailURL: URL?, videoId: String, isExplicit: Bool, videoType: VideoType? = nil) {
         self.id = id
         self.title = title
         self.artists = artists
@@ -31,6 +68,7 @@ public struct YouTubeMusicSong: Identifiable, Sendable, Codable {
         self.thumbnailURL = thumbnailURL
         self.videoId = videoId
         self.isExplicit = isExplicit
+        self.videoType = videoType
     }
 
     /// Robust Manual Initializer.
@@ -142,6 +180,7 @@ public struct YouTubeMusicSong: Identifiable, Sendable, Codable {
         }
 
         self.isExplicit = explicitBadgeFound
+        self.videoType = VideoType.find(in: data)
     }
 
     /// Parser for `playlistPanelVideoRenderer` payloads returned by `next` and `music/get_queue`.
@@ -260,6 +299,7 @@ public struct YouTubeMusicSong: Identifiable, Sendable, Codable {
         }
 
         self.isExplicit = explicitBadgeFound
+        self.videoType = VideoType.find(in: data)
     }
 
     private static func parseDuration(_ string: String) -> TimeInterval? {

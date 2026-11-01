@@ -245,6 +245,29 @@ public actor InnerTubeAPI {
         ],
     ]
 
+    /// The Vision Pro client context, preferred for progressive downloads.
+    ///
+    /// Field-for-field what yt-dlp sends for its `visionos` client (yt-dlp 2026.08.19),
+    /// which is deliberately minimal: no `hl`, `gl`, `clientScreen` or
+    /// `androidSdkVersion`, unlike the WEB/MWEB contexts in this file. `visitorData` is
+    /// injected per-request by `fetchPlayerInfoVisionOS`.
+    ///
+    /// Kept in step with `InnerTubeClients.AndroidVR`'s context in every respect that
+    /// matters for downloads: the User-Agent travels *inside* the client body as well as
+    /// as a request header, and no PO token is attached — this client declares no GVS
+    /// PO-token policy, and its stream URLs carry no `pot=` parameter.
+    let visionOSClientContext: [String: Any] = [
+        "client": [
+            "clientName": InnerTubeClients.VisionOS.name,
+            "clientVersion": InnerTubeClients.VisionOS.version,
+            "deviceMake": InnerTubeClients.VisionOS.deviceMake,
+            "deviceModel": InnerTubeClients.VisionOS.deviceModel,
+            "userAgent": InnerTubeClients.VisionOS.userAgent,
+            "osName": InnerTubeClients.VisionOS.osName,
+            "osVersion": InnerTubeClients.VisionOS.osVersion,
+        ],
+    ]
+
     /// The WEB_EMBEDDED_PLAYER client context for embedded iframe player requests.
     /// Replaces the deprecated TVHTML5_SIMPLY_EMBEDDED_PLAYER (nameID=85). YouTube blocked
     /// nameID=85 in 2026; yt-dlp removed `tv_embedded` and now uses `web_embedded` (nameID=56).

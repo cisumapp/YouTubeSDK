@@ -277,6 +277,18 @@ extension InnerTubeAPI {
         )
     }
 
+    func postVisionOS(body: [String: Any]) async throws -> [String: Any] {
+        try await post(
+            endpoint: "player",
+            body: body,
+            headers: [
+                "X-YouTube-Client-Name": InnerTubeClients.VisionOS.nameID,
+                "X-YouTube-Client-Version": InnerTubeClients.VisionOS.version,
+                "User-Agent": InnerTubeClients.VisionOS.userAgent,
+            ]
+        )
+    }
+
     func postAndroid(endpoint: String, body: [String: Any]) async throws -> [String: Any] {
         try await post(
             endpoint: endpoint,

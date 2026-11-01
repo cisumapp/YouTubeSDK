@@ -46,7 +46,30 @@ public actor YouTubeStreamResolver {
 
         let resolutionStart = Date()
 
-        // 0. Pre-fetch signatureTimestamp + playerID once per session.
+        // 0b. VISIONOS: AAC audio-only URLs the CDN serves to the last byte.
+        //
+        // Pre-signed (no JS decipher), no PO token, and — unlike IOS / MWEB / ANDROID_VR, whose
+        // URLs the CDN stops serving about a fifth of the way through the file — complete. Found and
+        // measured in the yt CLI's downloader.
+        //
+        // Not probed: VISIONOS URLs were measured to serve the whole file, and a probe cost a full
+        // round trip (~550 ms) on every cold play. If one ever fails, the player's fallback ladder
+        // re-resolves through the rest of this method.
+        if preferAudio {
+            let start = Date()
+            do {
+                let info = try await activeAPI.fetchPlayerInfoVisionOS(videoId: videoId)
+                if info.bestAdaptiveAudioURL != nil {
+                    PerfLog.notice(" VISIONOS audio for \(videoId) in \(String(format: "%.3f", Date().timeIntervalSince(start)))s")
+                    return info
+                }
+                PerfLog.notice(" VISIONOS for \(videoId): no audio-only URL (\(String(format: "%.3f", Date().timeIntervalSince(start)))s)")
+            } catch {
+                PerfLog.notice(" VISIONOS failed for \(videoId): \(error.localizedDescription)")
+            }
+        }
+
+        // Signature timestamp + playerID, once per session — needed from here on, not before.
         //
         // Without a playerID, `descrambleURL` returns every URL with its raw `/n=`
         // token, the CDN answers 403, and playback fails with "You do not have
@@ -54,25 +77,6 @@ public actor YouTubeStreamResolver {
         // success and then could not play. Doing it here rather than inside the smart
         // chain means the Android attempt below is covered too.
         _ = await activeAPI.fetchSignatureTimestampIfNeeded()
-
-        // 0b. VISIONOS: AAC audio-only URLs the CDN serves to the last byte.
-        //
-        // Pre-signed (no JS decipher), no PO token, and — unlike IOS / MWEB / ANDROID_VR, whose
-        // URLs the CDN stops serving about a fifth of the way through the file — complete. Found and
-        // measured in the yt CLI's downloader. Accepted only when the file's last bytes are served.
-        if preferAudio {
-            let start = Date()
-            do {
-                let info = try await activeAPI.fetchPlayerInfoVisionOS(videoId: videoId)
-                if let audio = info.bestAdaptiveAudioURL, await InnerTubeAPI.streamResponds(audio) {
-                    PerfLog.notice(" VISIONOS audio for \(videoId) in \(String(format: "%.3f", Date().timeIntervalSince(start)))s")
-                    return info
-                }
-                PerfLog.notice(" VISIONOS for \(videoId): no fully served audio-only URL (\(String(format: "%.3f", Date().timeIntervalSince(start)))s)")
-            } catch {
-                PerfLog.notice(" VISIONOS failed for \(videoId): \(error.localizedDescription)")
-            }
-        }
 
         // 1. Try unauthenticated Android client directly (often provides muxed 360p/720p).
         // This provides the fastest possible Time-To-First-Byte because it skips complex
@@ -206,6 +210,14 @@ public actor YouTubeStreamResolver {
         #endif
 
         throw APIError.unavailable("Streaming failed after trying all clients (InnerTube, Android, WebView).")
+    }
+
+    /// Loads the per-session state every resolve needs — visitorData and the player's signature
+    /// timestamp — so the first play does not wait on two homepage fetches (~1.4 s measured).
+    public func warmUp() async {
+        async let visitor: Void = api.ensureVisitorData()
+        async let timestamp = api.fetchSignatureTimestampIfNeeded()
+        _ = await (visitor, timestamp)
     }
 
     private static func isSignedFor(_ client: String, _ url: URL) -> Bool {

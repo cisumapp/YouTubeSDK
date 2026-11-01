@@ -357,7 +357,9 @@ public extension InnerTubeAPI {
         var clientFields = (visionOSClientContext["client"] as? [String: Any]) ?? [:]
         if let vd = visitorData { clientFields["visitorData"] = vd }
 
-        let sts = await fetchSignatureTimestampIfNeeded()
+        // Cached only: VISIONOS URLs arrive pre-signed, so a missing timestamp is harmless, and
+        // fetching it here put a ~900 ms homepage load in front of every cold play.
+        let sts = signatureTimestamp
         var cpbc: [String: Any] = ["html5Preference": "HTML5_PREF_WANTS"]
         if let sts { cpbc["signatureTimestamp"] = sts }
 

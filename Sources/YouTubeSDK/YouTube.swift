@@ -37,9 +37,7 @@ public final class YouTube {
     /// OAuth and Session Management Client
     public private(set) var oauth: YouTubeOAuthClient
 
-    /// DECIPHER ENGINE: WebViewPoTokenProvider commented out — not needed when streams have direct URLs.
-    /// Re-enable if YouTube re-introduces PO token requirements.
-    /// private let poTokenProvider = WebViewPoTokenProvider()
+    /// No PO token provider: playback uses the VISIONOS client, which needs none.
     private let poTokenProvider: PoTokenProvider? = nil
 
     public init(cookies: String? = nil) {

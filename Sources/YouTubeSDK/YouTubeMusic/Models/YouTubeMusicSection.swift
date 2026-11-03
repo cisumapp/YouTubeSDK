@@ -20,6 +20,9 @@ public struct YouTubeMusicSection: Identifiable, Sendable {
            let title = titleText.first?["text"] as? String
         {
             self.title = title
+        } else if let runs = (data["title"] as? [String: Any])?["runs"] as? [[String: Any]] {
+            // A vertical shelf ("Top songs") carries its title itself rather than in a header.
+            self.title = runs.compactMap { $0["text"] as? String }.joined()
         } else {
             self.title = ""
         }
@@ -33,25 +36,55 @@ public struct YouTubeMusicSection: Identifiable, Sendable {
                 if let song = YouTubeMusicSong(from: songData) { return .song(song) }
             }
 
-            // Check for Album/Playlist (Two Row Item)
-            if let boxData = itemDict["musicTwoRowItemRenderer"] as? [String: Any] {
-                // Heuristic: Nav endpoint tells us what it is
-                let nav = boxData["navigationEndpoint"] as? [String: Any]
-                let browse = nav?["browseEndpoint"] as? [String: Any]
-
-                // FIX: Break down the nested casting so Swift knows each level is a Dictionary
-                let supportedConfigs = browse?["browseEndpointContextSupportedConfigs"] as? [String: Any]
-                let musicConfig = supportedConfigs?["browseEndpointContextMusicConfig"] as? [String: Any]
-                let pageType = musicConfig?["pageType"] as? String
-
-                if pageType == "MUSIC_PAGE_TYPE_ALBUM" {
-                    if let album = YouTubeMusicAlbum(from: boxData) { return .album(album) }
-                } else if pageType == "MUSIC_PAGE_TYPE_PLAYLIST" {
-                    if let playlist = YouTubeMusicPlaylist(from: boxData) { return .playlist(playlist) }
-                } else if pageType == "MUSIC_PAGE_TYPE_ARTIST" {
-                    if let artist = YouTubeMusicArtist(from: boxData) { return .artist(artist) }
-                }
+            if let tile = itemDict["musicTwoRowItemRenderer"] as? [String: Any] {
+                return Self.item(fromTile: tile)
             }
+            return nil
+        }
+    }
+
+    /// A carousel tile (`musicTwoRowItemRenderer`): an album, single, playlist or artist that
+    /// opens a page, or a video that plays. The tile carries raw runs, not the flattened keys the
+    /// models' `init?(from:)` read, so it is unpacked here.
+    ///
+    /// The subtitle depends on the page: "2021" or "Single • 2021" on an artist page, "Album •
+    /// Radiohead • 1997" in search, "Radiohead • 1.6B views" for a video.
+    static func item(fromTile tile: [String: Any]) -> YouTubeMusicItem? {
+        func runs(_ key: String) -> [String] {
+            ((tile[key] as? [String: Any])?["runs"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }
+        }
+        let title = runs("title").joined()
+        guard !title.isEmpty else { return nil }
+        let details = runs("subtitle").filter { $0 != " • " }
+
+        let thumbnails = (((tile["thumbnailRenderer"] as? [String: Any])?["musicThumbnailRenderer"] as? [String: Any])?["thumbnail"] as? [String: Any])?["thumbnails"] as? [[String: Any]]
+        let thumbnailURL = (thumbnails?.last?["url"] as? String).flatMap(URL.init(string:))
+        let navigation = tile["navigationEndpoint"] as? [String: Any]
+
+        if let videoID = (navigation?["watchEndpoint"] as? [String: Any])?["videoId"] as? String {
+            return .song(YouTubeMusicSong(
+                id: videoID, title: title, artists: details.first.map { [$0] } ?? [], album: nil, duration: nil,
+                thumbnailURL: thumbnailURL, videoId: videoID, isExplicit: false, videoType: .find(in: tile)
+            ))
+        }
+
+        guard let browse = navigation?["browseEndpoint"] as? [String: Any],
+              let browseID = browse["browseId"] as? String
+        else { return nil }
+        let pageType = ((browse["browseEndpointContextSupportedConfigs"] as? [String: Any])?["browseEndpointContextMusicConfig"] as? [String: Any])?["pageType"] as? String
+
+        switch pageType {
+        case "MUSIC_PAGE_TYPE_ALBUM":
+            let kinds: Set<String> = ["Album", "Single", "EP"]
+            let year = details.last { $0.count == 4 && Int($0) != nil }
+            let artist = details.first { !kinds.contains($0) && $0 != year }
+            return .album(YouTubeMusicAlbum(id: browseID, title: title, artist: artist, year: year, thumbnailURL: thumbnailURL, explicit: false))
+        case "MUSIC_PAGE_TYPE_PLAYLIST":
+            let author = details.first == "Playlist" ? details.dropFirst().first : details.first
+            return .playlist(YouTubeMusicPlaylist(id: browseID, title: title, author: author, count: nil, thumbnailURL: thumbnailURL))
+        case "MUSIC_PAGE_TYPE_ARTIST":
+            return .artist(YouTubeMusicArtist(id: browseID, name: title, thumbnailURL: thumbnailURL, subscriberCount: details.first))
+        default:
             return nil
         }
     }

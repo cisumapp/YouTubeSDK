@@ -15,6 +15,15 @@ public struct YouTubeMusicAlbum: Identifiable, Sendable, Codable {
     public let thumbnailURL: URL?
     public let explicit: Bool
 
+    init(id: String, title: String, artist: String?, year: String?, thumbnailURL: URL?, explicit: Bool) {
+        self.id = id
+        self.title = title
+        self.artist = artist
+        self.year = year
+        self.thumbnailURL = thumbnailURL
+        self.explicit = explicit
+    }
+
     init?(from data: [String: Any]) {
         guard let id = data["browseId"] as? String ?? data["playlistId"] as? String else { return nil }
         self.id = id

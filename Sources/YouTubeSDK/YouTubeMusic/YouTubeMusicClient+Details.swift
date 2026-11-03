@@ -15,8 +15,21 @@ public extension YouTubeMusicClient {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw URLError(.cannotParseResponse)
         }
-        let sections = parseSections(from: json)
-        return YouTubeMusicArtistDetail(id: browseId, sections: sections)
+        let header = (json["header"] as? [String: Any])?["musicImmersiveHeaderRenderer"] as? [String: Any]
+            ?? (json["header"] as? [String: Any])?["musicVisualHeaderRenderer"] as? [String: Any]
+        func text(_ key: String) -> String? {
+            let runs = (header?[key] as? [String: Any])?["runs"] as? [[String: Any]]
+            return runs.map { $0.compactMap { $0["text"] as? String }.joined() }
+        }
+        let thumbnails = (((header?["thumbnail"] as? [String: Any])?["musicThumbnailRenderer"] as? [String: Any])?["thumbnail"] as? [String: Any])?["thumbnails"] as? [[String: Any]]
+        return YouTubeMusicArtistDetail(
+            id: browseId,
+            name: text("title"),
+            about: text("description"),
+            photoURL: (thumbnails?.last?["url"] as? String).flatMap(URL.init(string:)),
+            audience: text("monthlyListenerCount"),
+            sections: parseSections(from: json)
+        )
     }
 
     /// Fetches Album details (Tracks)

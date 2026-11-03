@@ -25,5 +25,14 @@ public enum YouTubeMusicItem: Identifiable, Sendable {
 
 public struct YouTubeMusicArtistDetail: Identifiable, Sendable {
     public let id: String
+    /// From the page header; `nil` when YouTube sends a header shape this does not know.
+    public let name: String?
+    public let about: String?
+    /// The wide banner photo, up to 2880px.
+    public let photoURL: URL?
+    /// "204M monthly audience".
+    public let audience: String?
+    /// In page order: "Top songs", "Albums", "Singles & EPs", "Videos", "Live performances",
+    /// "Featured on", "Playlists by …", "Fans might also like".
     public let sections: [YouTubeMusicSection]
 }

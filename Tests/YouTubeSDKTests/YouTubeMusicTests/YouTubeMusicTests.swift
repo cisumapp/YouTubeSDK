@@ -80,4 +80,23 @@ struct YouTubeMusicTests {
         #expect(artists.first?.name == "Radiohead")
         #expect(!playlists.isEmpty)
     }
+
+    @Test("Artist page: header and every section's tiles")
+    func artistPage() async throws {
+        let detail = try await YouTubeMusicClient().getArtist(browseId: "UCr_iyUANcn9OX_yy9piYoLw")
+        #expect(detail.name == "Radiohead")
+        #expect(detail.about?.isEmpty == false)
+        #expect(detail.photoURL != nil)
+        #expect(detail.audience?.contains("monthly") == true)
+
+        func section(_ prefix: String) -> [YouTubeMusicItem] {
+            detail.sections.first { $0.title.hasPrefix(prefix) }?.items ?? []
+        }
+        #expect(!section("Top songs").isEmpty)
+        #expect(section("Albums").contains { if case let .album(album) = $0 { album.year != nil } else { false } })
+        #expect(section("Singles").contains { if case .album = $0 { true } else { false } })
+        #expect(section("Videos").contains { if case .song = $0 { true } else { false } })
+        #expect(section("Playlists").contains { if case .playlist = $0 { true } else { false } })
+        #expect(section("Fans might also like").contains { if case .artist = $0 { true } else { false } })
+    }
 }

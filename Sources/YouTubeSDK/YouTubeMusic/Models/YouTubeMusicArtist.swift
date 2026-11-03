@@ -13,6 +13,13 @@ public struct YouTubeMusicArtist: Identifiable, Sendable, Codable {
     public let thumbnailURL: URL?
     public let subscriberCount: String?
 
+    init(id: String, name: String, thumbnailURL: URL?, subscriberCount: String?) {
+        self.id = id
+        self.name = name
+        self.thumbnailURL = thumbnailURL
+        self.subscriberCount = subscriberCount
+    }
+
     init?(from data: [String: Any]) {
         // Handle both "browseId" (from search) and "id" (from inline)
         guard let id = data["browseId"] as? String ?? data["id"] as? String else { return nil }

@@ -68,6 +68,31 @@ public actor YouTubeMusicClient {
     /// The protobuf-encoded filter YouTube Music's own web client sends for the "Songs" chip.
     static let songsFilterParams = "EgWKAQIIAWoMEA4QChADEAQQCRAF"
 
+    /// Artists matching the query, from the "Artists" chip.
+    public func searchArtists(_ query: String) async throws -> [YouTubeMusicArtist] {
+        try await searchListItems(query, params: Self.artistsFilterParams).compactMap {
+            if case let .artist(artist) = $0 { artist } else { nil }
+        }
+    }
+
+    /// Playlists matching the query, from the "Community playlists" chip. The "Featured playlists"
+    /// chip is YouTube Music's own, which drift off-topic after the first result or two.
+    public func searchPlaylists(_ query: String) async throws -> [YouTubeMusicPlaylist] {
+        try await searchListItems(query, params: Self.communityPlaylistsFilterParams).compactMap {
+            if case let .playlist(playlist) = $0 { playlist } else { nil }
+        }
+    }
+
+    private func searchListItems(_ query: String, params: String) async throws -> [YouTubeMusicItem] {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else { return [] }
+        let data = try await network.get("search", body: ["query": normalizedQuery, "params": params])
+        return parseListItems(from: data)
+    }
+
+    static let artistsFilterParams = "EgWKAQIgAWoMEA4QChADEAQQCRAF"
+    static let communityPlaylistsFilterParams = "EgeKAQQoAEABagwQDhAKEAMQBBAJEAU="
+
     private func searchViaYouTube(_ query: String) async throws -> [YouTubeMusicSong] {
         let youtube = YouTubeClient(cookies: cookies, accessToken: accessToken)
         let continuation = try await youtube.search(query)

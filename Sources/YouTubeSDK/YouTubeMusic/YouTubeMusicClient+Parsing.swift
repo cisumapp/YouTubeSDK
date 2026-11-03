@@ -45,6 +45,41 @@ extension YouTubeMusicClient {
         return songs
     }
 
+    /// Artist and playlist rows from a filtered search. A row is a `musicResponsiveListItemRenderer`
+    /// whose browse endpoint says what it opens; its first column is the name and its second the
+    /// details, e.g. "Artist • 204M monthly audience" or "Author • 341K views".
+    func parseListItems(from data: Data) -> [YouTubeMusicItem] {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
+
+        return findAll(key: "musicResponsiveListItemRenderer", in: json).compactMap { item in
+            guard let row = item as? [String: Any],
+                  let browse = (row["navigationEndpoint"] as? [String: Any])?["browseEndpoint"] as? [String: Any],
+                  let browseID = browse["browseId"] as? String
+            else { return nil }
+
+            let columns = (row["flexColumns"] as? [[String: Any]] ?? []).map { column in
+                let text = (column["musicResponsiveListItemFlexColumnRenderer"] as? [String: Any])?["text"] as? [String: Any]
+                return (text?["runs"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String }
+            }
+            guard let name = columns.first?.joined(), !name.isEmpty else { return nil }
+            let details = (columns.dropFirst().first ?? []).filter { $0 != " • " }
+
+            let thumbnails = (((row["thumbnail"] as? [String: Any])?["musicThumbnailRenderer"] as? [String: Any])?["thumbnail"] as? [String: Any])?["thumbnails"] as? [[String: Any]]
+            let thumbnailURL = (thumbnails?.last?["url"] as? String).flatMap(URL.init(string:))
+
+            let pageType = ((browse["browseEndpointContextSupportedConfigs"] as? [String: Any])?["browseEndpointContextMusicConfig"] as? [String: Any])?["pageType"] as? String
+            switch pageType {
+            case "MUSIC_PAGE_TYPE_ARTIST":
+                // details[0] is the row's kind ("Artist"); the audience size follows it.
+                return .artist(YouTubeMusicArtist(id: browseID, name: name, thumbnailURL: thumbnailURL, subscriberCount: details.count > 1 ? details.last : nil))
+            case "MUSIC_PAGE_TYPE_PLAYLIST":
+                return .playlist(YouTubeMusicPlaylist(id: browseID, title: name, author: details.first, count: nil, thumbnailURL: thumbnailURL))
+            default:
+                return nil
+            }
+        }
+    }
+
     func parseHomePage(from data: Data) -> YouTubeMusicHomePage {
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return YouTubeMusicHomePage(sections: [], continuationToken: nil)

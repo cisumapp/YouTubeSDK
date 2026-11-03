@@ -14,6 +14,14 @@ public struct YouTubeMusicPlaylist: Identifiable, Sendable, Codable {
     public let count: String?
     public let thumbnailURL: URL?
 
+    init(id: String, title: String, author: String?, count: String?, thumbnailURL: URL?) {
+        self.id = id
+        self.title = title
+        self.author = author
+        self.count = count
+        self.thumbnailURL = thumbnailURL
+    }
+
     init?(from data: [String: Any]) {
         guard let id = data["browseId"] as? String ?? data["playlistId"] as? String else { return nil }
         self.id = id

@@ -54,15 +54,7 @@ public actor YouTubeChartsClient {
     ) async throws -> [YouTubeChartItem] {
         let countryCode = normalizedCountryCode(country)
 
-        if let analyticsData = try? await analyticsNetwork.sendComplexRequest(
-            "browse",
-            body: [
-                "browseId": "FEmusic_analytics_charts_home",
-                "query": "perspective=CHART_HOME&chart_params_country_code=\(countryCode)",
-            ],
-            queryItems: [URLQueryItem(name: "alt", value: "json")],
-            additionalHeaders: ["X-Goog-Api-Format-Version": "2"]
-        ) {
+        if let analyticsData = await chartHomePage(countryCode) {
             let parsedHome = parseCharts(from: analyticsData, type: type, sectionKeywords: sectionKeywords)
             if !parsedHome.isEmpty {
                 return parsedHome
@@ -87,6 +79,32 @@ public actor YouTubeChartsClient {
         let fallbackBody: [String: Any] = ["browseId": YouTubeSDKConstants.InternalKeys.BrowseIDs.Music.charts]
         let fallbackData = try await musicNetwork.sendComplexRequest("browse", body: fallbackBody)
         return parseCharts(from: fallbackData, type: type, sectionKeywords: sectionKeywords)
+    }
+
+    /// The charts home page holds every chart (songs, videos, artists, trending), so the four getters
+    /// share one download per country: concurrent callers await the same request, and the page is
+    /// reused for five minutes. Before this, opening Discover fetched the same page four times.
+    private var chartHomePages: [String: (fetched: Date, request: Task<Data?, Never>)] = [:]
+
+    private func chartHomePage(_ countryCode: String) async -> Data? {
+        if let cached = chartHomePages[countryCode], Date().timeIntervalSince(cached.fetched) < 300 {
+            return await cached.request.value
+        }
+        let request = Task<Data?, Never> {
+            try? await analyticsNetwork.sendComplexRequest(
+                "browse",
+                body: [
+                    "browseId": "FEmusic_analytics_charts_home",
+                    "query": "perspective=CHART_HOME&chart_params_country_code=\(countryCode)",
+                ],
+                queryItems: [URLQueryItem(name: "alt", value: "json")],
+                additionalHeaders: ["X-Goog-Api-Format-Version": "2"]
+            )
+        }
+        chartHomePages[countryCode] = (Date(), request)
+        let page = await request.value
+        if page == nil { chartHomePages[countryCode] = nil } // don't keep a failure
+        return page
     }
 
     private nonisolated func normalizedCountryCode(_ country: String) -> String {

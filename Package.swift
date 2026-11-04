@@ -14,14 +14,12 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
-        .package(url: "https://github.com/swiftlang/swift-java-jni-core", from: "0.5.1"),
     ],
     targets: [
         .target(
             name: "YouTubeSDK",
             dependencies: [
                 .product(name: "Crypto", package: "swift-crypto"),
-                .product(name: "SwiftJavaJNICore", package: "swift-java-jni-core"),
             ],
             resources: [.process("Resources")]
         ),

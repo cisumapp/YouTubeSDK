@@ -9,6 +9,16 @@ import JavaScriptCore
 import os.log
 #endif
 
+/// Where YouTube's challenge JavaScript runs off Apple platforms, which have no JavaScriptCore.
+///
+/// The host app sets `evaluator` once at startup. It must evaluate a script in a context that already
+/// has the bundled EJS solver loaded (`yt.solver.lib.min.js`, then
+/// `var meriyah = lib.meriyah; var astring = lib.astring;`, then `yt.solver.core.min.js`), and
+/// return the final expression's value as a string, or nil. cisum-android runs it in a WebView.
+public enum YouTubeJavaScript {
+    nonisolated(unsafe) public static var evaluator: (@Sendable (String) -> String?)?
+}
+
 /// A unified resolver that solves YouTube's JavaScript-based challenges (n-parameter and signature cipher).
 ///
 /// ## Caching Architecture (AST-Once)
@@ -296,13 +306,6 @@ public actor YouTubeJSResolver {
         scrambled: String,
         type: String
     ) -> String? {
-#if canImport(JavaScriptCore)
-        let ctx = JSContext()!
-        var jsError: String?
-        ctx.exceptionHandler = { _, e in jsError = e?.toString() }
-
-        // Install minimal polyfills
-        ctx.evaluateScript("var window = this; var globalThis = this; var self = this;")
 
         // Evaluate the extracted solver function and call it
         let script: String
@@ -340,18 +343,25 @@ public actor YouTubeJSResolver {
             return nil
         }
 
+#if canImport(JavaScriptCore)
+        let ctx = JSContext()!
+        var jsError: String?
+        ctx.exceptionHandler = { _, e in jsError = e?.toString() }
+
+        // Install minimal polyfills
+        ctx.evaluateScript("var window = this; var globalThis = this; var self = this;")
         let result = ctx.evaluateScript(script)
         if let err = jsError {
             YouTubeLog.debug(" [JSResolver/fast] exception: \(err)")
         }
         let solved = result?.toString()
+#else
+        let solved = YouTubeJavaScript.evaluator?(script)
+#endif
         guard let s = solved, !s.isEmpty, s != "null", s != "undefined", s != scrambled else {
             return nil
         }
         return s
-#else
-        return nil
-#endif
     }
 
     // MARK: - Slow path: full AST parse + solver extraction
@@ -430,7 +440,29 @@ public actor YouTubeJSResolver {
 
         return (solved, finalSolver)
 #else
-        return (nil, nil)
+        let script = """
+        var playerJSContent = \(jsonStringLiteral(playerJS));
+        var scrambledValue = \(jsonStringLiteral(scrambled));
+        var challengeType = \(jsonStringLiteral(type));
+        (function() {
+            try {
+                var r = jsc({type:'player', player:playerJSContent,
+                             requests:[{type:challengeType, challenges:[scrambledValue]}]});
+                var d = r && r.responses && r.responses[0];
+                if (!d || !d.data) return JSON.stringify({});
+                var src = null;
+                if (d.solver) { try { src = d.solver.toString(); } catch(e) {} }
+                else if (d.solverSource) { src = d.solverSource; }
+                return JSON.stringify({solved: d.data[scrambledValue] || null, solverSource: src});
+            } catch(e) { return JSON.stringify({}); }
+        })()
+        """
+        struct Reply: Decodable { let solved: String?; let solverSource: String? }
+        let reply = YouTubeJavaScript.evaluator?(script)
+            .flatMap { try? JSONDecoder().decode(Reply.self, from: Data($0.utf8)) }
+        let solved = reply?.solved.flatMap { $0.isEmpty || $0 == scrambled ? nil : $0 }
+        let extracted = reply?.solverSource.flatMap { $0.isEmpty ? nil : $0 }
+        return (solved, extracted ?? extractSolverSourceFromPlayerJS(playerJS: playerJS, type: type))
 #endif
     }
 
@@ -477,7 +509,33 @@ public actor YouTubeJSResolver {
         else { return ([:], [:]) }
         return (decoded["sig"] ?? [:], decoded["n"] ?? [:])
 #else
-        return ([:], [:])
+        func list(_ a: [String]) -> String { "[" + a.map(jsonStringLiteral).joined(separator: ",") + "]" }
+        let script = """
+        var playerJSContent = \(jsonStringLiteral(playerJS));
+        var sigChallenges = \(list(sigs));
+        var nChallenges = \(list(ns));
+        (function() {
+            try {
+                var requests = [];
+                if (nChallenges.length) requests.push({type:'n', challenges:nChallenges});
+                if (sigChallenges.length) requests.push({type:'sig', challenges:sigChallenges});
+                var r = jsc({type:'player', player:playerJSContent, requests:requests});
+                var out = {n:{}, sig:{}};
+                for (var i = 0; i < requests.length; i++) {
+                    var data = r && r.responses && r.responses[i] && r.responses[i].data;
+                    if (!data) continue;
+                    for (var k in data) {
+                        if (typeof data[k] === 'string' && data[k].length > 0 && data[k] !== k) out[requests[i].type][k] = data[k];
+                    }
+                }
+                return JSON.stringify(out);
+            } catch(e) { return null; }
+        })()
+        """
+        guard let json = YouTubeJavaScript.evaluator?(script),
+              let decoded = try? JSONDecoder().decode([String: [String: String]].self, from: Data(json.utf8))
+        else { return ([:], [:]) }
+        return (decoded["sig"] ?? [:], decoded["n"] ?? [:])
 #endif
     }
 
@@ -572,6 +630,11 @@ public actor YouTubeJSResolver {
         if let lib = cachedLibCode, let core = cachedCoreCode {
             return (lib, core)
         }
+#if !canImport(JavaScriptCore)
+        // The host's evaluator already has them loaded (see YouTubeJavaScript), and an Android
+        // APK has no resource bundle for Bundle.module to find.
+        return ("", "")
+#endif
 
         guard let libURL = Bundle.module.url(forResource: "yt.solver.lib.min", withExtension: "js"),
               let coreURL = Bundle.module.url(forResource: "yt.solver.core.min", withExtension: "js"),

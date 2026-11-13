@@ -133,11 +133,13 @@ public actor YouTubeStreamResolver {
         // chain is the only hope of playing at all, so it runs to completion and its failure is
         // reported.
         var chain: PlayerInfo?
+        var chainNeedsSignIn = false
         if retained == nil {
             do {
                 chain = try await attempt()
             } catch {
                 PerfLog.error(" InnerTube failed for \(videoId): \(error.localizedDescription)")
+                if case APIError.signInRequired = error { chainNeedsSignIn = true }
             }
         } else {
             chain = await firstResult(attempt, within: chainImprovementDeadline)
@@ -174,6 +176,15 @@ public actor YouTubeStreamResolver {
             let summary = formatSummary(retained)
             PerfLog.notice("Using the retained Android response for \(videoId) — \(summary)")
             return retained
+        }
+
+        // An age gate is not bot detection: every client, signed in or not, was told to sign in, and the
+        // WebView below is no better placed. It ran to its 6 s timeout on age-restricted videos, and
+        // again when the resolver's search found the same video — ~15 s before the tap failed
+        // (Logging trace, device).
+        if chainNeedsSignIn {
+            PerfLog.notice("Skipping WebView extraction for \(videoId): sign-in required")
+            throw APIError.signInRequired
         }
 
         // 3. Try WebView HLS Extraction (High-fidelity, bypasses most bot detection).

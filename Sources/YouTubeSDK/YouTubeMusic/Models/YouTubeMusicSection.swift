@@ -64,7 +64,7 @@ public struct YouTubeMusicSection: Identifiable, Sendable {
         if let videoID = (navigation?["watchEndpoint"] as? [String: Any])?["videoId"] as? String {
             return .song(YouTubeMusicSong(
                 id: videoID, title: title, artists: details.first.map { [$0] } ?? [], album: nil, duration: nil,
-                thumbnailURL: thumbnailURL, videoId: videoID, isExplicit: false, videoType: .find(in: tile)
+                thumbnailURL: thumbnailURL, videoId: videoID, isExplicit: YouTubeMusicSong.hasExplicitBadge(tile), videoType: .find(in: tile)
             ))
         }
 

@@ -162,24 +162,8 @@ public struct YouTubeMusicSong: Identifiable, Sendable, Codable {
             self.thumbnailURL = nil
         }
 
-        // 5. Explicit Badge
-        // assume false, then prove true if found the badge.
-        var explicitBadgeFound = false
-
-        if let badges = data["badges"] as? [[String: Any]] {
-            for badge in badges {
-                if let renderer = badge["musicInlineBadgeRenderer"] as? [String: Any],
-                   let icon = renderer["icon"] as? [String: Any],
-                   let type = icon["iconType"] as? String,
-                   type == "MUSIC_EXPLICIT_BADGE"
-                {
-                    explicitBadgeFound = true
-                    break
-                }
-            }
-        }
-
-        self.isExplicit = explicitBadgeFound
+        // 5. Explicit badge
+        self.isExplicit = Self.hasExplicitBadge(data)
         self.videoType = VideoType.find(in: data)
     }
 
@@ -284,21 +268,7 @@ public struct YouTubeMusicSong: Identifiable, Sendable, Codable {
             self.thumbnailURL = nil
         }
 
-        var explicitBadgeFound = false
-        if let badges = data["badges"] as? [[String: Any]] {
-            for badge in badges {
-                if let renderer = badge["musicInlineBadgeRenderer"] as? [String: Any],
-                   let icon = renderer["icon"] as? [String: Any],
-                   let type = icon["iconType"] as? String,
-                   type == "MUSIC_EXPLICIT_BADGE"
-                {
-                    explicitBadgeFound = true
-                    break
-                }
-            }
-        }
-
-        self.isExplicit = explicitBadgeFound
+        self.isExplicit = Self.hasExplicitBadge(data)
         self.videoType = VideoType.find(in: data)
     }
 
@@ -307,5 +277,19 @@ public struct YouTubeMusicSong: Identifiable, Sendable, Codable {
         if parts.count == 2 { return (parts[0] * 60) + parts[1] }
         if parts.count == 3 { return (parts[0] * 3600) + (parts[1] * 60) + parts[2] }
         return nil
+    }
+}
+
+extension YouTubeMusicSong {
+    /// Whether a renderer carries YouTube Music's explicit badge. List rows keep it under `badges`,
+    /// carousel tiles (`musicTwoRowItemRenderer`) under `subtitleBadges`; tiles were never read, so
+    /// every Home shelf song showed as clean.
+    static func hasExplicitBadge(_ renderer: [String: Any]) -> Bool {
+        ["badges", "subtitleBadges"].contains { key in
+            (renderer[key] as? [[String: Any]] ?? []).contains { badge in
+                ((badge["musicInlineBadgeRenderer"] as? [String: Any])?["icon"] as? [String: Any])?["iconType"] as? String
+                    == "MUSIC_EXPLICIT_BADGE"
+            }
+        }
     }
 }

@@ -776,11 +776,17 @@ public extension InnerTubeAPI {
         if streamingData == nil, playabilityStatus != "OK" {
             let reason = playabilityReason ?? "This video is unavailable (\(playabilityStatus))"
             tubeLog.error(" parsePlayerInfo: unplayable — \(reason)")
+            let lowerReason = reason.lowercased()
+            // The bot wall also arrives as LOGIN_REQUIRED ("Sign in to confirm you're not a bot"). It is
+            // not an age gate — other clients and the WebView can still get past it — so it must be
+            // told apart before the status check: the resolver fails fast on `signInRequired`.
+            if lowerReason.contains("not a bot") || lowerReason.contains("automated") {
+                throw APIError.ipBlocked(reason)
+            }
             let signInStatuses: Set = ["LOGIN_REQUIRED", "AGE_VERIFICATION_REQUIRED", "AGE_CHECK_REQUIRED"]
             if signInStatuses.contains(playabilityStatus) {
                 throw APIError.signInRequired
             }
-            let lowerReason = reason.lowercased()
             let signInKeywords = ["sign in", "age-restricted", "age restricted", "18+", "age verification"]
             if signInKeywords.contains(where: { lowerReason.contains($0) }) {
                 throw APIError.signInRequired
